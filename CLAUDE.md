@@ -24,6 +24,7 @@ Goals:
 13) Include 2 example projects in the repo that can be built and run: one for iOS, and one for macOS. These should serve as documentation for how to use the framework and to easily verify it's working.
 14) Should comply with NDI's EULA for redistribution.
 15) For any xcode build scripts opt into using sandbox and declare all inputs & outputs.
+16) Use all modern Apple SDKs. i.e. Only use SwiftUI unless absolutely necessary to use UIKit.
 
 I've installed the NDI SDK locally on my mac, and the license allows redistribution. 
 The SDK provides various header files along with these 2 binary files:
