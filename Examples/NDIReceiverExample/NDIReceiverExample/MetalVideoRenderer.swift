@@ -10,7 +10,9 @@ import MetalKit
 import NDIKit
 import os
 
+/// Renders NDI frames using Metal and provides them to an MTKView.
 final class MetalVideoRenderer: NSObject, MTKViewDelegate, NDIFrameConsumer {
+    /// Supported compute pipelines keyed by input format.
     private enum PipelineKind: CaseIterable {
         case bgra
         case rgba
@@ -18,6 +20,7 @@ final class MetalVideoRenderer: NSObject, MTKViewDelegate, NDIFrameConsumer {
         case p216
     }
 
+    /// Parameters passed to conversion compute shaders.
     private struct ConversionParams {
         var width: UInt32
         var height: UInt32
@@ -26,6 +29,7 @@ final class MetalVideoRenderer: NSObject, MTKViewDelegate, NDIFrameConsumer {
         var flags: UInt32
     }
 
+    /// Tracks a frame and its backing buffer in flight on the GPU.
     private struct InFlightFrame {
         let frame: NDIVideoFrame
         let buffer: MTLBuffer
@@ -50,6 +54,7 @@ final class MetalVideoRenderer: NSObject, MTKViewDelegate, NDIFrameConsumer {
     private let pendingFrameLock = OSAllocatedUnfairLock<NDIVideoFrame?>(initialState: nil)
     private weak var view: MTKView?
 
+    /// Creates a renderer bound to the provided Metal view.
     init?(view: MTKView) {
         guard let device = MTLCreateSystemDefaultDevice() else {
             print("MetalVideoRenderer: No Metal device available")
@@ -133,16 +138,18 @@ final class MetalVideoRenderer: NSObject, MTKViewDelegate, NDIFrameConsumer {
         view.preferredFramesPerSecond = 60
     }
 
+    /// Accepts a new NDI frame and schedules a draw.
     func enqueue(_ frame: NDIVideoFrame) {
         pendingFrameLock.withLock { $0 = frame }
         if let view {
-            DispatchQueue.main.async {
+            Task { @MainActor [view] in
                 view.setNeedsDisplay(view.bounds)
             }
         }
     }
 
     @MainActor
+    /// Drains any queued frames and resets GPU state.
     func drain() {
         pendingFrameLock.withLock { $0 = nil }
 
@@ -159,8 +166,10 @@ final class MetalVideoRenderer: NSObject, MTKViewDelegate, NDIFrameConsumer {
         }
     }
 
+    /// Responds to drawable size changes (unused).
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
 
+    /// Renders the latest available frame into the drawable.
     func draw(in view: MTKView) {
         inFlightSemaphore.wait()
         var didSchedule = false
@@ -281,6 +290,7 @@ final class MetalVideoRenderer: NSObject, MTKViewDelegate, NDIFrameConsumer {
 
     }
 
+    /// Maps a FourCC to the matching compute pipeline.
     private func pipelineKind(for fourCC: FourCC) -> PipelineKind? {
         if fourCC == .bgra || fourCC == .bgrx {
             return .bgra
@@ -297,6 +307,7 @@ final class MetalVideoRenderer: NSObject, MTKViewDelegate, NDIFrameConsumer {
         return nil
     }
 
+    /// Builds compute parameters for a given frame.
     private func buildParams(for frame: NDIVideoFrame) -> ConversionParams {
         let hasAlpha: Bool
         if frame.fourCC == .bgra || frame.fourCC == .rgba {
@@ -317,6 +328,7 @@ final class MetalVideoRenderer: NSObject, MTKViewDelegate, NDIFrameConsumer {
         )
     }
 
+    /// Allocates and copies frame data into a shared Metal buffer.
     private func makeBuffer(from frame: NDIVideoFrame) -> MTLBuffer? {
         guard let baseAddress = frame.data?.baseAddress else {
             return nil
@@ -326,6 +338,7 @@ final class MetalVideoRenderer: NSObject, MTKViewDelegate, NDIFrameConsumer {
         return device.makeBuffer(bytesNoCopy: mutableBase, length: length, options: .storageModeShared, deallocator: nil)
     }
 
+    /// Computes the byte length for a frame buffer.
     private func dataLength(for frame: NDIVideoFrame) -> Int {
         if frame.fourCC == .p216 {
             return frame.lineStride * frame.height * 2
@@ -333,6 +346,7 @@ final class MetalVideoRenderer: NSObject, MTKViewDelegate, NDIFrameConsumer {
         return frame.lineStride * frame.height
     }
 
+    /// Ensures a reusable output texture exists for the given size.
     private func ensureOutputTexture(width: Int, height: Int, index: Int) -> MTLTexture? {
         if textureSize.width != width || textureSize.height != height || textureCache.count != maxInFlightFrames {
             textureSize = MTLSize(width: width, height: height, depth: 1)
@@ -353,6 +367,7 @@ final class MetalVideoRenderer: NSObject, MTKViewDelegate, NDIFrameConsumer {
         return textureCache[index]
     }
 
+    /// Encodes a textured full-screen render pass.
     private func encodeRenderPass(
         commandBuffer: MTLCommandBuffer,
         renderPassDescriptor: MTLRenderPassDescriptor,
@@ -380,6 +395,7 @@ final class MetalVideoRenderer: NSObject, MTKViewDelegate, NDIFrameConsumer {
         commandBuffer.present(drawable)
     }
 
+    /// Fits the frame into the view while preserving aspect ratio.
     private func fitViewport(viewSize: CGSize, frameSize: CGSize, aspect: Double) -> MTLViewport {
         guard viewSize.width > 0, viewSize.height > 0 else {
             return MTLViewport(originX: 0, originY: 0, width: 0, height: 0, znear: 0, zfar: 1)

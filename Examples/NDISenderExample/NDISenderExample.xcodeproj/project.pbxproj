@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		646774A12F34C0A000890794 /* NDIKit in Frameworks */ = {isa = PBXBuildFile; productRef = 646774A32F34C0A000890794 /* NDIKit */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		646774372F33882A00890793 /* NDISenderExample.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NDISenderExample.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -23,6 +27,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				646774A12F34C0A000890794 /* NDIKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -65,6 +70,7 @@
 			);
 			name = NDISenderExample;
 			packageProductDependencies = (
+				646774A32F34C0A000890794 /* NDIKit */,
 			);
 			productName = NDISenderExample;
 			productReference = 646774372F33882A00890793 /* NDISenderExample.app */;
@@ -95,6 +101,7 @@
 			mainGroup = 6467742E2F33882A00890793;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				646774A22F34C0A000890794 /* XCLocalSwiftPackageReference "../../NDIKit" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 646774382F33882A00890793 /* Products */;
@@ -263,7 +270,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -272,7 +279,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.example.NDISenderExample;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTED_PLATFORMS = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
@@ -302,7 +309,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -311,7 +318,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.example.NDISenderExample;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTED_PLATFORMS = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
@@ -346,6 +353,20 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		646774A22F34C0A000890794 /* XCLocalSwiftPackageReference "../../NDIKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../../NDIKit;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		646774A32F34C0A000890794 /* NDIKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = NDIKit;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 6467742F2F33882A00890793 /* Project object */;
 }
