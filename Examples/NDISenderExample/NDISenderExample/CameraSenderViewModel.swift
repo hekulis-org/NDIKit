@@ -18,10 +18,73 @@ final class CameraSenderViewModel {
     var configuration = SenderConfiguration()
     private(set) var isStreaming = false
     private(set) var errorMessage: String?
+    private(set) var availableCameras: [CameraDevice] = []
 
     // MARK: - Private State
 
     private var renderer: CameraSenderRenderer?
+
+    // MARK: - Initialization
+
+    init() {
+        discoverCameras()
+    }
+
+    // MARK: - Camera Discovery
+
+    func discoverCameras() {
+        let deviceTypes: [AVCaptureDevice.DeviceType] = [
+            .builtInWideAngleCamera,
+            .builtInTelephotoCamera,
+            .builtInUltraWideCamera,
+            .builtInDualCamera,
+            .builtInDualWideCamera,
+            .builtInTripleCamera
+        ]
+
+        let discoverySession = AVCaptureDevice.DiscoverySession(
+            deviceTypes: deviceTypes,
+            mediaType: .video,
+            position: .unspecified
+        )
+
+        availableCameras = discoverySession.devices.map { device in
+            CameraDevice(
+                id: device.uniqueID,
+                name: formatCameraName(device),
+                position: device.position,
+                device: device
+            )
+        }
+
+        // Select first camera if none selected
+        if configuration.selectedCameraID == nil, let first = availableCameras.first {
+            configuration.selectedCameraID = first.id
+        }
+    }
+
+    private func formatCameraName(_ device: AVCaptureDevice) -> String {
+        let position: String
+        switch device.position {
+        case .front:
+            position = "Front"
+        case .back:
+            position = "Back"
+        default:
+            position = ""
+        }
+
+        // Extract lens type from localized name
+        let name = device.localizedName
+        if position.isEmpty {
+            return name
+        }
+        return "\(position) - \(name)"
+    }
+
+    var selectedCamera: CameraDevice? {
+        availableCameras.first { $0.id == configuration.selectedCameraID }
+    }
 
     // MARK: - Renderer Wiring
 
@@ -53,7 +116,13 @@ final class CameraSenderViewModel {
                 errorMessage = "Failed to initialize Metal renderer."
                 return
             }
-            renderer.start(configuration: configuration)
+
+            guard let camera = selectedCamera else {
+                errorMessage = "No camera selected."
+                return
+            }
+
+            renderer.start(configuration: configuration, camera: camera.device)
             isStreaming = true
         }
     }

@@ -49,6 +49,14 @@ struct SourceListView: View {
         }
         .navigationTitle("Sources")
         .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    viewModel.refreshSources()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .disabled(viewModel.isConnected)
+            }
             ToolbarItem {
                 if viewModel.isConnected {
                     Button("Disconnect") {

@@ -135,10 +135,10 @@ final class CameraSenderRenderer: NSObject, MTKViewDelegate, AVCaptureVideoDataO
     }
 
     /// Starts capture and NDI transmission with the provided configuration.
-    func start(configuration: SenderConfiguration) {
+    func start(configuration: SenderConfiguration, camera: AVCaptureDevice) {
         streamingLock.withLock { $0 = true }
 
-        ensureSession()
+        setupSession(configuration: configuration, camera: camera)
 
         guard let sender = NDISender(configuration: configuration.ndiConfiguration) else {
             onError?("Failed to create NDI sender.")
@@ -312,20 +312,23 @@ final class CameraSenderRenderer: NSObject, MTKViewDelegate, AVCaptureVideoDataO
 
     // MARK: - Session Setup
 
-    /// Lazily configures the capture session and video output.
-    private func ensureSession() {
-        guard session == nil else { return }
+    /// Configures the capture session with the specified camera and settings.
+    private func setupSession(configuration: SenderConfiguration, camera: AVCaptureDevice) {
+        // Tear down existing session if any
+        if let existingSession = session {
+            existingSession.stopRunning()
+            self.session = nil
+        }
 
         let session = AVCaptureSession()
         session.beginConfiguration()
 
-        let preset: AVCaptureSession.Preset = session.canSetSessionPreset(.hd1280x720) ? .hd1280x720 : .high
-        session.sessionPreset = preset
-
-        guard let camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) else {
-            session.commitConfiguration()
-            onError?("No camera available.")
-            return
+        // Set resolution preset
+        let preset = configuration.resolution.sessionPreset
+        if session.canSetSessionPreset(preset) {
+            session.sessionPreset = preset
+        } else if session.canSetSessionPreset(.high) {
+            session.sessionPreset = .high
         }
 
         do {
@@ -334,18 +337,28 @@ final class CameraSenderRenderer: NSObject, MTKViewDelegate, AVCaptureVideoDataO
                 session.addInput(input)
             }
 
+            // Configure frame rate
             try camera.lockForConfiguration()
-            let targetDuration = CMTime(value: 1, timescale: 30)
-            if camera.activeVideoMinFrameDuration != targetDuration {
-                camera.activeVideoMinFrameDuration = targetDuration
-                camera.activeVideoMaxFrameDuration = targetDuration
+            let targetDuration = configuration.frameRate.cmTime
+
+            // Find a format that supports our desired frame rate
+            let desiredFPS = Float64(configuration.frameRate.rawValue)
+            for format in camera.formats {
+                let ranges = format.videoSupportedFrameRateRanges
+                for range in ranges where range.minFrameRate <= desiredFPS && range.maxFrameRate >= desiredFPS {
+                    camera.activeFormat = format
+                    break
+                }
             }
+
+            camera.activeVideoMinFrameDuration = targetDuration
+            camera.activeVideoMaxFrameDuration = targetDuration
             camera.unlockForConfiguration()
 
-            frameRate = (numerator: Int(targetDuration.timescale), denominator: Int(targetDuration.value))
+            frameRate = configuration.frameRate.ndiFrameRate
         } catch {
             session.commitConfiguration()
-            onError?("Failed to configure camera input: \(error)")
+            onError?("Failed to configure camera: \(error.localizedDescription)")
             return
         }
 

@@ -105,6 +105,13 @@ final class NDIReceiverViewModel {
         finder = nil
     }
 
+    /// Refresh the source list by restarting discovery.
+    func refreshSources() {
+        stopDiscovery()
+        sources = []
+        startDiscovery()
+    }
+
     // MARK: - Connection
 
     /// Handle source selection changes.
