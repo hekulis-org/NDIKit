@@ -61,10 +61,6 @@ final class MetalVideoRenderer: NSObject, MTKViewDelegate, NDIFrameConsumer, @un
             print("MetalVideoRenderer: No Metal device available")
             return nil
         }
-        guard device.supportsFamily(.metal4) else {
-            print("MetalVideoRenderer: Metal 4 not supported on this device")
-            return nil
-        }
         guard let commandQueue = device.makeCommandQueue() else {
             print("MetalVideoRenderer: Failed to create command queue")
             return nil

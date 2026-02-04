@@ -2,7 +2,8 @@
 set -euo pipefail
 
 # Build NDIKitC.xcframework
-# Focuses on Apple Silicon (arm64) only, real hardware first
+# Supports: macOS (arm64), iOS device (arm64)
+# Note: iOS Simulator not supported - NDI SDK has linker issues when converted
 
 # Colors
 RED='\033[0;31m'
@@ -272,4 +273,8 @@ echo ""
 echo -e "${GREEN}Done! XCFramework is ready at:${NC}"
 echo "$FRAMEWORKS_DIR/$XCFRAMEWORK_NAME"
 echo ""
-echo -e "${YELLOW}Note: This XCFramework contains arm64 only (Apple Silicon + iOS devices)${NC}"
+echo -e "${GREEN}Supported platforms:${NC}"
+echo "  • macOS (arm64) - Apple Silicon Macs"
+echo "  • iOS (arm64) - iPhone/iPad devices"
+echo ""
+echo -e "${YELLOW}Note: iOS Simulator is not supported (NDI SDK limitation)${NC}"

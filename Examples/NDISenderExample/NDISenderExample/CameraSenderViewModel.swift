@@ -50,7 +50,7 @@ final class CameraSenderViewModel {
 
             errorMessage = nil
             guard let renderer else {
-                errorMessage = "Metal 4 GPU required to stream video."
+                errorMessage = "Failed to initialize Metal renderer."
                 return
             }
             renderer.start(configuration: configuration)

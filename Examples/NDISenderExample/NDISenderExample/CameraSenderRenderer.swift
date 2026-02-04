@@ -75,9 +75,6 @@ final class CameraSenderRenderer: NSObject, MTKViewDelegate, AVCaptureVideoDataO
         guard let device = MTLCreateSystemDefaultDevice() else {
             return nil
         }
-        guard device.supportsFamily(.metal4) else {
-            return nil
-        }
         guard let commandQueue = device.makeCommandQueue() else {
             return nil
         }

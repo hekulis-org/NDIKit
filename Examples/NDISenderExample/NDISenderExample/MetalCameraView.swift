@@ -44,7 +44,7 @@ struct MetalCameraView: UIViewRepresentable {
                 viewModel?.setRenderer(renderer)
             } else {
                 viewModel?.setRenderer(nil)
-                viewModel?.setErrorMessage("Metal 4 GPU required to stream video.")
+                viewModel?.setErrorMessage("Failed to initialize Metal renderer.")
             }
         }
 

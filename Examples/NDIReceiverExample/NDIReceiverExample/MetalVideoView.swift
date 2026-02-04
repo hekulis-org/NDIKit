@@ -47,7 +47,7 @@ struct MetalVideoView: NSViewRepresentable {
                 view.delegate = renderer
                 viewModel?.setFrameConsumer(renderer)
             } else {
-                viewModel?.setErrorMessage("Metal 4 GPU required to render video.")
+                viewModel?.setErrorMessage("Failed to initialize Metal renderer.")
             }
         }
 
