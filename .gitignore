@@ -11,3 +11,4 @@ DerivedData/
 Vendor/NDI-SDK/
 Build/
 *.xcworkspace/xcuserdata/
+.claude/
