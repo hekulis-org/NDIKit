@@ -151,16 +151,14 @@ final class NDIReceiverViewModel {
         frameInfo = nil
 
         let consumer = frameConsumerLock.withLock { $0 }
-        if let consumer {
-            Task { [weak self] in
-                if let taskToFinish {
-                    await taskToFinish.value
-                }
-                consumer.drain()
+        Task { [weak self] in
+            if let taskToFinish {
+                await taskToFinish.value
+            }
+            await consumer?.drain()
+            await MainActor.run {
                 self?.pendingReceiverRelease.removeAll()
             }
-        } else {
-            pendingReceiverRelease.removeAll()
         }
     }
 
@@ -178,9 +176,6 @@ final class NDIReceiverViewModel {
 
                 switch result {
                 case .video(let frame):
-                    let fourCC = frame.fourCC
-//                    print("NDIReceiverViewModel: Received frame \(frame.width)x\(frame.height), format: \(fourCC)")
-
                     self.deliver(frame)
 
                     let info = FrameInfo(

@@ -91,7 +91,7 @@ struct VideoView: View {
                     Text("Connecting...")
                         .foregroundStyle(.white)
                 }
-            } else {
+            } else if viewModel.selectedSource == nil {
                 VStack(spacing: 16) {
                     Image(systemName: "play.rectangle")
                         .font(.system(size: 60))
@@ -100,6 +100,7 @@ struct VideoView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            // When connected with video: show nothing (Metal view is visible)
 
             // Frame info overlay
             if let info = viewModel.frameInfo {

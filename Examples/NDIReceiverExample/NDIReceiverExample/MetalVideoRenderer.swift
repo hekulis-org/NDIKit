@@ -11,7 +11,7 @@ import NDIKit
 import os
 
 /// Renders NDI frames using Metal and provides them to an MTKView.
-final class MetalVideoRenderer: NSObject, MTKViewDelegate, NDIFrameConsumer {
+final class MetalVideoRenderer: NSObject, MTKViewDelegate, NDIFrameConsumer, @unchecked Sendable {
     /// Supported compute pipelines keyed by input format.
     private enum PipelineKind: CaseIterable {
         case bgra
@@ -46,12 +46,13 @@ final class MetalVideoRenderer: NSObject, MTKViewDelegate, NDIFrameConsumer {
     private let maxInFlightFrames = 3
     private let inFlightSemaphore: DispatchSemaphore
     private var inFlightIndex = 0
-    private var inFlightFrames: [InFlightFrame?]
+    private let inFlightFramesLock: OSAllocatedUnfairLock<[InFlightFrame?]>
     private var textureCache: [MTLTexture] = []
     private var textureSize = MTLSize(width: 0, height: 0, depth: 1)
     private var lastTexture: MTLTexture?
     private var lastFrameInfo: (width: Int, height: Int, aspect: Double)?
     private let pendingFrameLock = OSAllocatedUnfairLock<NDIVideoFrame?>(initialState: nil)
+    private let drainContinuationLock = OSAllocatedUnfairLock<CheckedContinuation<Void, Never>?>(initialState: nil)
     private weak var view: MTKView?
 
     /// Creates a renderer bound to the provided Metal view.
@@ -124,7 +125,7 @@ final class MetalVideoRenderer: NSObject, MTKViewDelegate, NDIFrameConsumer {
         }
 
         self.inFlightSemaphore = DispatchSemaphore(value: maxInFlightFrames)
-        self.inFlightFrames = Array(repeating: nil, count: maxInFlightFrames)
+        self.inFlightFramesLock = OSAllocatedUnfairLock(initialState: Array(repeating: nil, count: maxInFlightFrames))
         self.view = view
 
         super.init()
@@ -148,22 +149,38 @@ final class MetalVideoRenderer: NSObject, MTKViewDelegate, NDIFrameConsumer {
         }
     }
 
-    @MainActor
-    /// Drains any queued frames and resets GPU state.
-    func drain() {
+    /// Drains any queued frames and waits for in-flight GPU work to complete.
+    func drain() async {
         pendingFrameLock.withLock { $0 = nil }
 
-        for _ in 0..<maxInFlightFrames {
-            inFlightSemaphore.wait()
+        // Check if already drained
+        let allClear = inFlightFramesLock.withLock { frames in
+            frames.allSatisfy { $0 == nil }
         }
 
-        inFlightFrames = Array(repeating: nil, count: maxInFlightFrames)
+        if !allClear {
+            // Wait for all in-flight frames to complete
+            await withCheckedContinuation { continuation in
+                drainContinuationLock.withLock { $0 = continuation }
+
+                // Re-check after storing continuation (race condition guard)
+                let nowClear = inFlightFramesLock.withLock { frames in
+                    frames.allSatisfy { $0 == nil }
+                }
+                if nowClear {
+                    drainContinuationLock.withLock { stored in
+                        if stored != nil {
+                            stored = nil
+                            continuation.resume()
+                        }
+                    }
+                }
+            }
+        }
+
+        inFlightFramesLock.withLock { $0 = Array(repeating: nil, count: maxInFlightFrames) }
         lastTexture = nil
         lastFrameInfo = nil
-
-        for _ in 0..<maxInFlightFrames {
-            inFlightSemaphore.signal()
-        }
     }
 
     /// Responds to drawable size changes (unused).
@@ -224,11 +241,11 @@ final class MetalVideoRenderer: NSObject, MTKViewDelegate, NDIFrameConsumer {
             }
 
             let inFlightFrame = InFlightFrame(frame: pendingFrame, buffer: buffer, width: width, height: height, aspect: aspect)
-            inFlightFrames[frameIndex] = inFlightFrame
+            inFlightFramesLock.withLock { $0[frameIndex] = inFlightFrame }
 
             var params = buildParams(for: pendingFrame)
             guard let computeEncoder = commandBuffer.makeComputeCommandEncoder() else {
-                inFlightFrames[frameIndex] = nil
+                inFlightFramesLock.withLock { $0[frameIndex] = nil }
                 return
             }
             computeEncoder.setComputePipelineState(pipeline)
@@ -255,9 +272,19 @@ final class MetalVideoRenderer: NSObject, MTKViewDelegate, NDIFrameConsumer {
                 frameInfo: frameInfo
             )
 
-            commandBuffer.addCompletedHandler { _ in
-                self.inFlightFrames[frameIndex] = nil
+            commandBuffer.addCompletedHandler { [weak self] _ in
+                guard let self else { return }
+                self.inFlightFramesLock.withLock { $0[frameIndex] = nil }
                 self.inFlightSemaphore.signal()
+
+                // Resume drain continuation if all frames complete
+                let allClear = self.inFlightFramesLock.withLock { $0.allSatisfy { $0 == nil } }
+                if allClear {
+                    self.drainContinuationLock.withLock { continuation in
+                        continuation?.resume()
+                        continuation = nil
+                    }
+                }
             }
 
             didSchedule = true
@@ -350,6 +377,8 @@ final class MetalVideoRenderer: NSObject, MTKViewDelegate, NDIFrameConsumer {
     private func ensureOutputTexture(width: Int, height: Int, index: Int) -> MTLTexture? {
         if textureSize.width != width || textureSize.height != height || textureCache.count != maxInFlightFrames {
             textureSize = MTLSize(width: width, height: height, depth: 1)
+            lastTexture = nil
+            lastFrameInfo = nil
             textureCache = (0..<maxInFlightFrames).compactMap { _ in
                 let descriptor = MTLTextureDescriptor.texture2DDescriptor(
                     pixelFormat: .bgra8Unorm,

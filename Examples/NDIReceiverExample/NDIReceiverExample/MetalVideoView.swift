@@ -25,6 +25,10 @@ struct MetalVideoView: NSViewRepresentable {
         context.coordinator.update(viewModel: viewModel)
     }
 
+    static func dismantleNSView(_ view: MTKView, coordinator: Coordinator) {
+        coordinator.detach()
+    }
+
     @MainActor
     final class Coordinator {
         private weak var viewModel: NDIReceiverViewModel?
@@ -57,8 +61,9 @@ struct MetalVideoView: NSViewRepresentable {
             }
         }
 
-        deinit {
+        func detach() {
             viewModel?.setFrameConsumer(nil)
+            renderer = nil
         }
     }
 }

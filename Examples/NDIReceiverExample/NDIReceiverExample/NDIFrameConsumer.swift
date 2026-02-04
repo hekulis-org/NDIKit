@@ -8,7 +8,7 @@
 import NDIKit
 
 /// Receives NDI video frames for rendering.
-protocol NDIFrameConsumer: AnyObject {
+protocol NDIFrameConsumer: AnyObject, Sendable {
     nonisolated func enqueue(_ frame: NDIVideoFrame)
-    @MainActor func drain()
+    func drain() async
 }
