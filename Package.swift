@@ -5,22 +5,49 @@ import PackageDescription
 
 let package = Package(
     name: "NDIKit",
+    platforms: [
+        // Supported platforms.
+        .macOS(.v15),  // macOS Sequoia
+        .iOS(.v17),    // iOS 17.5+ (17.0 is the minimum for .v17)
+    ],
     products: [
-        // Products define the executables and libraries a package produces, making them visible to other packages.
+        // Main library for users to import.
         .library(
             name: "NDIKit",
             targets: ["NDIKit"]
         ),
     ],
+
+
     targets: [
-        // Targets are the basic building blocks of a package, defining a module or a test suite.
-        // Targets can depend on other targets in this package and products from dependencies.
+        
+        // Swift wrapper - this is what users interact with
         .target(
-            name: "NDIKit"
+            name: "NDIKit",
+            dependencies: ["NDIKitC"],
+            path: "Sources/NDIKit",
+            swiftSettings: [
+                .enableUpcomingFeature("StrictConcurrency"),
+            ]
         ),
+
+        // Binary XCFramework containing the NDI SDK
+        .binaryTarget(
+            name: "NDIKitC",
+            path: "Frameworks/NDIKitC.xcframework"
+        ),
+
+
         .testTarget(
             name: "NDIKitTests",
-            dependencies: ["NDIKit"]
+            dependencies: ["NDIKit"],
+            swiftSettings: [
+                .enableUpcomingFeature("StrictConcurrency"),
+            ]
         ),
-    ]
+
+    ],
+
+    swiftLanguageModes: [.v6]
+
 )
