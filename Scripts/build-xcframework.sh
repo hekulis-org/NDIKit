@@ -87,43 +87,47 @@ create_framework() {
     local BINARY_PATH=$2
     local OUTPUT_DIR=$3
     local IS_DYNAMIC=$4
-    
+
     echo "  Creating $PLATFORM framework..."
-    
+
     FRAMEWORK_DIR="$OUTPUT_DIR/NDIKitC.framework"
-    mkdir -p "$FRAMEWORK_DIR/Headers"
-    mkdir -p "$FRAMEWORK_DIR/Modules"
-    
-    # Copy binary
-    if [ "$IS_DYNAMIC" = "true" ]; then
-        cp "$BINARY_PATH" "$FRAMEWORK_DIR/NDIKitC"
+
+    # Determine minimum OS version
+    local MIN_OS_VERSION="17.5"
+    if [ "$PLATFORM" = "MacOSX" ]; then
+        MIN_OS_VERSION="15.0"
+    fi
+
+    # macOS uses a "deep" versioned bundle structure
+    # iOS uses a "shallow" flat bundle structure
+    if [ "$PLATFORM" = "MacOSX" ]; then
+        # Create versioned directory structure for macOS
+        local VERSION_DIR="$FRAMEWORK_DIR/Versions/A"
+        mkdir -p "$VERSION_DIR/Headers"
+        mkdir -p "$VERSION_DIR/Modules"
+        mkdir -p "$VERSION_DIR/Resources"
+
+        # Copy binary
+        cp "$BINARY_PATH" "$VERSION_DIR/NDIKitC"
         # Fix install name for dynamic library
-        install_name_tool -id "@rpath/NDIKitC.framework/NDIKitC" "$FRAMEWORK_DIR/NDIKitC"
-    else
-        cp "$BINARY_PATH" "$FRAMEWORK_DIR/NDIKitC"
-    fi
-    
-    # Copy headers
-    if [ -d "$VENDOR_DIR/include" ]; then
-        cp "$VENDOR_DIR/include"/*.h "$FRAMEWORK_DIR/Headers/" 2>/dev/null || true
-    fi
-    
-    # Create module.modulemap
-    cat > "$FRAMEWORK_DIR/Modules/module.modulemap" << 'EOF'
+        install_name_tool -id "@rpath/NDIKitC.framework/Versions/A/NDIKitC" "$VERSION_DIR/NDIKitC"
+
+        # Copy headers
+        if [ -d "$VENDOR_DIR/include" ]; then
+            cp "$VENDOR_DIR/include"/*.h "$VERSION_DIR/Headers/" 2>/dev/null || true
+        fi
+
+        # Create module.modulemap
+        cat > "$VERSION_DIR/Modules/module.modulemap" << 'EOF'
 framework module NDIKitC {
     umbrella header "Processing.NDI.Lib.h"
     export *
     module * { export * }
 }
 EOF
-    
-    # Create Info.plist
-    local MIN_OS_VERSION="17.5"
-    if [ "$PLATFORM" = "MacOSX" ]; then
-        MIN_OS_VERSION="15.0"
-    fi
-    
-    cat > "$FRAMEWORK_DIR/Info.plist" << EOF
+
+        # Create Info.plist in Resources
+        cat > "$VERSION_DIR/Resources/Info.plist" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -153,6 +157,70 @@ EOF
 </dict>
 </plist>
 EOF
+
+        # Create symlinks for versioned structure
+        # Current version symlink
+        ln -s "A" "$FRAMEWORK_DIR/Versions/Current"
+
+        # Top-level symlinks pointing to Versions/Current/*
+        ln -s "Versions/Current/NDIKitC" "$FRAMEWORK_DIR/NDIKitC"
+        ln -s "Versions/Current/Headers" "$FRAMEWORK_DIR/Headers"
+        ln -s "Versions/Current/Modules" "$FRAMEWORK_DIR/Modules"
+        ln -s "Versions/Current/Resources" "$FRAMEWORK_DIR/Resources"
+    else
+        # iOS uses shallow (flat) bundle structure
+        mkdir -p "$FRAMEWORK_DIR/Headers"
+        mkdir -p "$FRAMEWORK_DIR/Modules"
+
+        # Copy binary
+        cp "$BINARY_PATH" "$FRAMEWORK_DIR/NDIKitC"
+
+        # Copy headers
+        if [ -d "$VENDOR_DIR/include" ]; then
+            cp "$VENDOR_DIR/include"/*.h "$FRAMEWORK_DIR/Headers/" 2>/dev/null || true
+        fi
+
+        # Create module.modulemap
+        cat > "$FRAMEWORK_DIR/Modules/module.modulemap" << 'EOF'
+framework module NDIKitC {
+    umbrella header "Processing.NDI.Lib.h"
+    export *
+    module * { export * }
+}
+EOF
+
+        # Create Info.plist at root level for iOS
+        cat > "$FRAMEWORK_DIR/Info.plist" << EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleExecutable</key>
+    <string>NDIKitC</string>
+    <key>CFBundleIdentifier</key>
+    <string>video.ndi.NDIKitC</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>NDIKitC</string>
+    <key>CFBundlePackageType</key>
+    <string>FMWK</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>CFBundleSupportedPlatforms</key>
+    <array>
+        <string>$PLATFORM</string>
+    </array>
+    <key>MinimumOSVersion</key>
+    <string>$MIN_OS_VERSION</string>
+</dict>
+</plist>
+EOF
+    fi
 }
 
 # Create iOS Device Framework (static)

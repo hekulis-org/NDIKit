@@ -28,6 +28,15 @@ let package = Package(
             path: "Sources/NDIKit",
             swiftSettings: [
                 .enableUpcomingFeature("StrictConcurrency"),
+            ],
+            linkerSettings: [
+                // NDI SDK dependencies - required for the static iOS library
+                .linkedLibrary("c++"),
+                .linkedFramework("Accelerate"),
+                .linkedFramework("AudioToolbox"),
+                .linkedFramework("VideoToolbox"),
+                .linkedFramework("CoreMedia"),
+                .linkedFramework("CoreVideo"),
             ]
         ),
 

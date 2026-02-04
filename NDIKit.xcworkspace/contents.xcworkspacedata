@@ -4,6 +4,47 @@
    <FileRef
       location = "group:Package.swift">
    </FileRef>
+   <Group
+      location = "group:Scripts"
+      name = "Scripts">
+      <FileRef
+         location = "group:build-xcframework.sh">
+      </FileRef>
+   </Group>
+   <Group
+      location = "group:Sources"
+      name = "Sources">
+      <Group
+         location = "group:NDIKit"
+         name = "NDIKit">
+         <FileRef
+            location = "group:NDISource.swift">
+         </FileRef>
+         <FileRef
+            location = "group:NDIKit.swift">
+         </FileRef>
+         <FileRef
+            location = "group:NDIFrames.swift">
+         </FileRef>
+         <FileRef
+            location = "group:NDIReceiver.swift">
+         </FileRef>
+         <FileRef
+            location = "group:NDIFinder.swift">
+         </FileRef>
+      </Group>
+   </Group>
+   <Group
+      location = "group:Tests"
+      name = "Tests">
+      <Group
+         location = "group:NDIKitTests"
+         name = "NDIKitTests">
+         <FileRef
+            location = "group:NDIKitTests.swift">
+         </FileRef>
+      </Group>
+   </Group>
    <FileRef
       location = "group:Examples/NDISenderExample/NDISenderExample.xcodeproj">
    </FileRef>
