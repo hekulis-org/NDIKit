@@ -82,11 +82,9 @@ struct VideoView: View {
         ZStack {
             Color.black
 
-            if let frame = viewModel.currentFrame {
-                Image(decorative: frame, scale: 1)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-            } else if viewModel.selectedSource != nil {
+            MetalVideoView(viewModel: viewModel)
+
+            if viewModel.selectedSource != nil && !viewModel.hasVideoFrame {
                 VStack(spacing: 16) {
                     ProgressView()
                         .scaleEffect(1.5)

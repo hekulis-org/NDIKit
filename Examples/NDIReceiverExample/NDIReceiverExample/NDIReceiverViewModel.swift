@@ -5,9 +5,9 @@
 //  Created by Ed on 04.02.26.
 //
 
-import CoreGraphics
 import Foundation
 import NDIKit
+import os
 
 /// Manages NDI source discovery and video capture.
 @MainActor
@@ -28,8 +28,8 @@ final class NDIReceiverViewModel {
         }
     }
 
-    /// The current video frame to display.
-    private(set) var currentFrame: CGImage?
+    /// Whether we have received at least one video frame.
+    private(set) var hasVideoFrame = false
 
     /// Whether we are connected to a source.
     private(set) var isConnected = false
@@ -58,6 +58,8 @@ final class NDIReceiverViewModel {
     private var receiver: NDIReceiver?
     private var discoveryTask: Task<Void, Never>?
     private var captureTask: Task<Void, Never>?
+    private var pendingReceiverRelease: [NDIReceiver] = []
+    nonisolated private let frameConsumerLock = OSAllocatedUnfairLock<NDIFrameConsumer?>(initialState: nil)
 
     // MARK: - Initialization
 
@@ -136,13 +138,30 @@ final class NDIReceiverViewModel {
 
     /// Disconnect from the current source.
     func disconnect() {
-        captureTask?.cancel()
+        let taskToFinish = captureTask
+        taskToFinish?.cancel()
         captureTask = nil
 
+        if let receiver {
+            pendingReceiverRelease.append(receiver)
+        }
         receiver = nil
         isConnected = false
-        currentFrame = nil
+        hasVideoFrame = false
         frameInfo = nil
+
+        let consumer = frameConsumerLock.withLock { $0 }
+        if let consumer {
+            Task { [weak self] in
+                if let taskToFinish {
+                    await taskToFinish.value
+                }
+                consumer.drain()
+                self?.pendingReceiverRelease.removeAll()
+            }
+        } else {
+            pendingReceiverRelease.removeAll()
+        }
     }
 
     // MARK: - Capture
@@ -160,12 +179,9 @@ final class NDIReceiverViewModel {
                 switch result {
                 case .video(let frame):
                     let fourCC = frame.fourCC
-                    print("NDIReceiverViewModel: Received frame \(frame.width)x\(frame.height), format: \(fourCC)")
+//                    print("NDIReceiverViewModel: Received frame \(frame.width)x\(frame.height), format: \(fourCC)")
 
-                    let image = VideoFrameConverter.convert(frame)
-                    if image == nil {
-                        print("NDIReceiverViewModel: Frame conversion returned nil")
-                    }
+                    self.deliver(frame)
 
                     let info = FrameInfo(
                         width: frame.width,
@@ -175,7 +191,7 @@ final class NDIReceiverViewModel {
                     )
 
                     await MainActor.run {
-                        self.currentFrame = image
+                        self.hasVideoFrame = true
                         self.frameInfo = info
                     }
 
@@ -210,5 +226,21 @@ final class NDIReceiverViewModel {
         }
 
         return "\(bitDepth) \(fourCC)"
+    }
+
+    // MARK: - Error Handling
+
+    func setErrorMessage(_ message: String?) {
+        errorMessage = message
+    }
+
+    // MARK: - Frame Delivery
+
+    nonisolated func setFrameConsumer(_ consumer: NDIFrameConsumer?) {
+        frameConsumerLock.withLock { $0 = consumer }
+    }
+
+    private nonisolated func deliver(_ frame: NDIVideoFrame) {
+        frameConsumerLock.withLock { $0 }?.enqueue(frame)
     }
 }
