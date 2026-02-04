@@ -6,10 +6,6 @@
 	objectVersion = 77;
 	objects = {
 
-/* Begin PBXBuildFile section */
-		646774472F33899A00890793 /* NDIKit in Frameworks */ = {isa = PBXBuildFile; productRef = 646774462F33899A00890793 /* NDIKit */; };
-/* End PBXBuildFile section */
-
 /* Begin PBXFileReference section */
 		646774372F33882A00890793 /* NDISenderExample.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NDISenderExample.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -27,7 +23,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				646774472F33899A00890793 /* NDIKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -70,7 +65,6 @@
 			);
 			name = NDISenderExample;
 			packageProductDependencies = (
-				646774462F33899A00890793 /* NDIKit */,
 			);
 			productName = NDISenderExample;
 			productReference = 646774372F33882A00890793 /* NDISenderExample.app */;
@@ -101,7 +95,6 @@
 			mainGroup = 6467742E2F33882A00890793;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				646774452F33899A00890793 /* XCLocalSwiftPackageReference "../../../NDIKit" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 646774382F33882A00890793 /* Products */;
@@ -353,20 +346,6 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
-
-/* Begin XCLocalSwiftPackageReference section */
-		646774452F33899A00890793 /* XCLocalSwiftPackageReference "../../../NDIKit" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = ../../../NDIKit;
-		};
-/* End XCLocalSwiftPackageReference section */
-
-/* Begin XCSwiftPackageProductDependency section */
-		646774462F33899A00890793 /* NDIKit */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = NDIKit;
-		};
-/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 6467742F2F33882A00890793 /* Project object */;
 }

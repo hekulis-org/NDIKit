@@ -43,7 +43,7 @@ let package = Package(
         // Binary XCFramework containing the NDI SDK
         .binaryTarget(
             name: "NDIKitC",
-            path: "Frameworks/NDIKitC.xcframework"
+            path: "../Frameworks/NDIKitC.xcframework"
         ),
 
 

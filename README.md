@@ -1,14 +1,30 @@
+# NDIKit
 
-## Initial Setup Steps
+This is a multi-platform Swift Package wrapper around the official NDI SDK.
 
-Copy the libraries:
+It uses Swift 6 with strict concurrency.
+
+Currently supported platforms: iOS, macOS.
+
+**How it's Structured**
+
+- The original SDK files are copied to: `/Vendor/NDI-SDK`.
+- The build script patches and packages those into an XCFramework bundle for multi-platform use.
+- Code in `NDIKit/Sources/NDIKit` is where all the Swift wrapper code lives.
+- See 2 example projects for usage.
+
+## Dev: Rebuilding this package
+
+Copy the official SDK library files:
 `cp -R /Library/NDI\ SDK\ for\ Apple/lib/{iOS,macOS} Vendor/NDI-SDK/lib/`
 
 Copy the headers:
 `cp -R /Library/NDI\ SDK\ for\ Apple/include/* Vendor/NDI-SDK/include/`
 
-## Usage
+Run the build script:
 `./Scripts/build-xcframework.sh`
+
+Make sure it worked:
 `swift build`
 `swift test`
 
