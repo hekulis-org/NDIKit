@@ -451,7 +451,7 @@ final class CameraSenderRenderer: NSObject, MTKViewDelegate, AVCaptureVideoDataO
         renderEncoder.setRenderPipelineState(renderPipeline)
         renderEncoder.setFragmentTexture(outputTexture, index: 0)
         renderEncoder.setFragmentSamplerState(samplerState, index: 0)
-        renderEncoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6)
+        renderEncoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
         renderEncoder.endEncoding()
         commandBuffer.present(drawable)
     }

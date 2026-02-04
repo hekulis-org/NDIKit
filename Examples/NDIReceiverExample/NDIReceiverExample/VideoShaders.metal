@@ -7,25 +7,21 @@ struct VertexOut {
 };
 
 vertex VertexOut passthroughVertex(uint vertexID [[vertex_id]]) {
-    constexpr float4 positions[6] = {
-        float4(-1.0, -1.0, 0.0, 1.0),
-        float4( 1.0, -1.0, 0.0, 1.0),
-        float4(-1.0,  1.0, 0.0, 1.0),
-        float4( 1.0, -1.0, 0.0, 1.0),
-        float4( 1.0,  1.0, 0.0, 1.0),
-        float4(-1.0,  1.0, 0.0, 1.0)
+    constexpr float2 positions[4] = {
+        float2(-1.0, -1.0),
+        float2( 1.0, -1.0),
+        float2(-1.0,  1.0),
+        float2( 1.0,  1.0)
     };
-    constexpr float2 texCoords[6] = {
+    constexpr float2 texCoords[4] = {
         float2(0.0, 1.0),
         float2(1.0, 1.0),
         float2(0.0, 0.0),
-        float2(1.0, 1.0),
-        float2(1.0, 0.0),
-        float2(0.0, 0.0)
+        float2(1.0, 0.0)
     };
 
     VertexOut out;
-    out.position = positions[vertexID];
+    out.position = float4(positions[vertexID], 0.0, 1.0);
     out.texCoord = texCoords[vertexID];
     return out;
 }
