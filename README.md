@@ -14,6 +14,7 @@ Copy the headers:
 
 ## TODO
 - min os versions should be variables in the build script
+- change development team in example apps
 
 - simulator support
 - script to refresh sdk files and rebuild framework
