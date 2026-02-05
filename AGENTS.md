@@ -62,7 +62,6 @@ lib/macOS/libndi.dylib (for architecture arm64):	Mach-O 64-bit dynamically linke
 It seems like there are some challenges around how to get this working for both Mac and iOS, since the iOS library is static and the macOS library is dynamic. From my research it seems the best path forward is to combine all the SDK assets into an "NDIKit.xcframework" bundle (definitely do NOT use a FatFramework approach as this is outdated). 
 
 ## Source of Truth
-- High-level project goals and constraints: `CLAUDE.md`
 - Build + SDK import steps: `README.md`
 - Swift wrapper code: `NDIKit/Sources/NDIKit`
 - Example apps:
@@ -85,22 +84,21 @@ It seems like there are some challenges around how to get this working for both 
 - Avoid main-thread work for `AVCaptureSession.startRunning()`/`stopRunning()`; use `Task.detached` for those calls.
 
 ## Rendering & GPU Rules
-- Do not render via SwiftUI `Image` for video. Use Metal/MetalKit.
+- All rendering and video format conversions should happen using Metal/MetalKit on the GPU. Do not render via SwiftUI `Image` etc for video.
 - Perform format conversions on the GPU (compute shader), not CPU.
 - Vertex shaders should use the simplified 4-vertex quad and `triangleStrip`.
+- Avoid conversions when possible.
+- Should default to this wire format when sending over NDI: 8-bit UYVY @ HD (Rec.709)
 
 ## Code Style
-- **Comment all classes, structs, enums, and their methods**.
+- **Comment the purpose of all classes, structs, enums, and their methods**.
 - Keep comments concise and purpose-driven.
 
 ## iOS Sender Example Notes
-- Uses camera capture, NV12 -> BGRA conversion on GPU, Metal preview, and NDI sender.
-- Orientation handling uses `effectiveGeometry.interfaceOrientation` and `videoRotationAngle` (iOS 26+).
 - `SUPPORTED_PLATFORMS = iphoneos` because the NDI C SDK lacks a simulator slice.
 
 ## macOS Receiver Example Notes
 - Metal renderer consumes NDI frames via `NDIFrameConsumer`.
-- Rendering is fully GPU-based; conversion pipelines cover multiple FourCC formats.
 
 ## Build & Distribution
 - To rebuild the XCFramework:
@@ -115,9 +113,15 @@ It seems like there are some challenges around how to get this working for both 
 
 ## Authoritative References
 
+NDI Upstream
 - https://docs.ndi.video/all
+
+Apple (Frameworks & Packages)
 - https://developer.apple.com/documentation/xcode/creating-a-static-framework
 - https://developer.apple.com/documentation/xcode/creating-a-standalone-swift-package-with-xcode
 - https://developer.apple.com/documentation/xcode/bundling-resources-with-a-swift-package
 - https://developer.apple.com/documentation/xcode/creating-a-multi-platform-binary-framework-bundle
 - https://developer.apple.com/documentation/xcode/distributing-binary-frameworks-as-swift-packages
+
+Apple (Video Processing)
+- https://developer.apple.com/documentation/technotes/tn3121-selecting-a-pixel-format-for-an-avcapturevideodataoutput
