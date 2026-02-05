@@ -71,12 +71,17 @@ final class NDIReceiverViewModel {
     func startDiscovery() {
         guard finder == nil else { return }
 
-        finder = NDIFinder(configuration: configuration.finderConfiguration)
+        let config = configuration.finderConfiguration
+        print("NDI Finder config: showLocalSources=\(config.showLocalSources), groups=\(config.groups ?? "nil"), extraIPs=\(config.extraIPs ?? "nil")")
+
+        finder = NDIFinder(configuration: config)
         guard finder != nil else {
             errorMessage = "Failed to create NDI finder"
+            print("ERROR: Failed to create NDI finder")
             return
         }
 
+        print("NDI Finder created successfully")
         errorMessage = nil
 
         discoveryTask = Task.detached { [weak self] in
@@ -88,8 +93,15 @@ final class NDIReceiverViewModel {
                 // Wait for source list to change (blocking call)
                 let changed = finder.waitForSources(timeout: 1000)
 
+                let newSources = finder.sources
+                if changed || newSources.count > 0 {
+                    print("NDI Discovery: changed=\(changed), found \(newSources.count) sources")
+                    for source in newSources {
+                        print("  - \(source.name)")
+                    }
+                }
+
                 if changed {
-                    let newSources = finder.sources
                     await MainActor.run {
                         self.sources = newSources
                     }
