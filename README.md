@@ -17,6 +17,8 @@ Refer to the example projects for detailed usage.
 
 **NDI discovery requires Bonjour**: `NSBonjourServices = _ndi._tcp` and Local Network permission entitlements must be added to your projects.
 
+Refer to [NDI's network switch settings](https://docs.ndi.video/all/using-ndi/using-ndi-with-hardware/recommended-network-switch-settings-for-ndi).
+
 Note the [licensing requirements from the upstream NDI SDK](https://docs.ndi.video/all/developing-with-ndi/sdk/licensing) that must be adhered to.
 
 ## Terminology Notes

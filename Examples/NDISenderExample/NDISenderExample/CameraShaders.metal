@@ -40,29 +40,47 @@ struct ConversionParams {
     uint bytesPerRow;
 };
 
-// CoreVideo’s bi-planar 4:2:0 pixel buffers map directly to NV12
-kernel void nv12_to_bgra(texture2d<float, access::read> luma [[texture(0)]],
+// Converts NV12 (4:2:0 bi-planar) to UYVY (4:2:2 packed) for NDI,
+// and simultaneously writes BGRA to a display texture for on-screen preview.
+// Each thread processes a macro-pixel (2 horizontal pixels).
+kernel void nv12_to_uyvy(texture2d<float, access::read> luma [[texture(0)]],
                          texture2d<float, access::read> chroma [[texture(1)]],
+                         texture2d<float, access::write> display [[texture(2)]],
                          device uchar *dst [[buffer(0)]],
                          constant ConversionParams &params [[buffer(1)]],
                          uint2 gid [[thread_position_in_grid]]) {
-    if (gid.x >= params.width || gid.y >= params.height) {
+    uint px = gid.x * 2;
+    if (px >= params.width || gid.y >= params.height) {
         return;
     }
 
-    float y = luma.read(gid).r;
-    uint2 chromaCoord = uint2(gid.x >> 1, gid.y >> 1);
-    float2 uv = chroma.read(chromaCoord).rg - float2(0.5, 0.5);
+    // Read luma for both pixels in the macro-pixel
+    float y0 = luma.read(uint2(px, gid.y)).r;
+    float y1 = (px + 1 < params.width) ? luma.read(uint2(px + 1, gid.y)).r : y0;
 
-    float r = y + 1.5748 * uv.y;
-    float g = y - 0.1873 * uv.x - 0.4681 * uv.y;
-    float b = y + 1.8556 * uv.x;
+    // Read shared chroma (NV12: half width, half height)
+    uint2 chromaCoord = uint2(gid.x, gid.y >> 1);
+    float2 cbcr = chroma.read(chromaCoord).rg;
 
-    float3 rgb = clamp(float3(r, g, b), 0.0, 1.0);
-
+    // Write UYVY macro-pixel: U0 Y0 V0 Y1
     uint offset = gid.y * params.bytesPerRow + gid.x * 4;
-    dst[offset + 0] = uchar(rgb.b * 255.0);
-    dst[offset + 1] = uchar(rgb.g * 255.0);
-    dst[offset + 2] = uchar(rgb.r * 255.0);
-    dst[offset + 3] = 255;
+    dst[offset + 0] = uchar(cbcr.r * 255.0);  // U (Cb)
+    dst[offset + 1] = uchar(y0 * 255.0);       // Y0
+    dst[offset + 2] = uchar(cbcr.g * 255.0);   // V (Cr)
+    dst[offset + 3] = uchar(y1 * 255.0);       // Y1
+
+    // Convert to RGB for display (BT.709 full-range)
+    float2 uv = cbcr - float2(0.5, 0.5);
+
+    float r0 = y0 + 1.5748 * uv.y;
+    float g0 = y0 - 0.1873 * uv.x - 0.4681 * uv.y;
+    float b0 = y0 + 1.8556 * uv.x;
+    display.write(float4(clamp(float3(r0, g0, b0), 0.0, 1.0), 1.0), uint2(px, gid.y));
+
+    if (px + 1 < params.width) {
+        float r1 = y1 + 1.5748 * uv.y;
+        float g1 = y1 - 0.1873 * uv.x - 0.4681 * uv.y;
+        float b1 = y1 + 1.8556 * uv.x;
+        display.write(float4(clamp(float3(r1, g1, b1), 0.0, 1.0), 1.0), uint2(px + 1, gid.y));
+    }
 }

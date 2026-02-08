@@ -14,7 +14,7 @@ import os
 
 /// Renders camera frames with Metal and sends them as NDI video frames.
 final class CameraSenderRenderer: NSObject, MTKViewDelegate, AVCaptureVideoDataOutputSampleBufferDelegate {
-    /// Parameters passed to the NV12-to-BGRA compute shader.
+    /// Parameters passed to the NV12-to-UYVY compute shader.
     private struct ConversionParams {
         var width: UInt32
         var height: UInt32
@@ -23,9 +23,9 @@ final class CameraSenderRenderer: NSObject, MTKViewDelegate, AVCaptureVideoDataO
 
     /// Backing storage for a single in-flight frame.
     private struct FrameBuffer {
-        let buffer: MTLBuffer
-        let texture: MTLTexture
-        let bytesPerRow: Int
+        let ndiBuffer: MTLBuffer       // UYVY data for NDI (shared storage)
+        let displayTexture: MTLTexture // BGRA texture for on-screen preview
+        let ndiBytesPerRow: Int        // Line stride for UYVY buffer
         let width: Int
         let height: Int
     }
@@ -82,7 +82,7 @@ final class CameraSenderRenderer: NSObject, MTKViewDelegate, AVCaptureVideoDataO
             return nil
         }
 
-        guard let computeFunction = library.makeFunction(name: "nv12_to_bgra") else {
+        guard let computeFunction = library.makeFunction(name: "nv12_to_uyvy") else {
             return nil
         }
         guard let vertexFunction = library.makeFunction(name: "cameraVertex"),
@@ -235,12 +235,13 @@ final class CameraSenderRenderer: NSObject, MTKViewDelegate, AVCaptureVideoDataO
                 computeEncoder.setComputePipelineState(computePipeline)
                 computeEncoder.setTexture(lumaTexture, index: 0)
                 computeEncoder.setTexture(chromaTexture, index: 1)
-                computeEncoder.setBuffer(frameBuffer.buffer, offset: 0, index: 0)
+                computeEncoder.setTexture(frameBuffer.displayTexture, index: 2)
+                computeEncoder.setBuffer(frameBuffer.ndiBuffer, offset: 0, index: 0)
 
                 var params = ConversionParams(
                     width: UInt32(width),
                     height: UInt32(height),
-                    bytesPerRow: UInt32(frameBuffer.bytesPerRow)
+                    bytesPerRow: UInt32(frameBuffer.ndiBytesPerRow)
                 )
                 computeEncoder.setBytes(&params, length: MemoryLayout<ConversionParams>.stride, index: 1)
 
@@ -251,7 +252,8 @@ final class CameraSenderRenderer: NSObject, MTKViewDelegate, AVCaptureVideoDataO
                     height: max(1, maxThreads / threadExecutionWidth),
                     depth: 1
                 )
-                let threadsPerGrid = MTLSize(width: width, height: height, depth: 1)
+                // Each thread processes a 2-pixel macro-pixel
+                let threadsPerGrid = MTLSize(width: (width + 1) / 2, height: height, depth: 1)
                 computeEncoder.dispatchThreads(threadsPerGrid, threadsPerThreadgroup: threadsPerThreadgroup)
                 computeEncoder.endEncoding()
             }
@@ -259,7 +261,7 @@ final class CameraSenderRenderer: NSObject, MTKViewDelegate, AVCaptureVideoDataO
             encodeRenderPass(
                 commandBuffer: commandBuffer,
                 renderPassDescriptor: renderPassDescriptor,
-                outputTexture: frameBuffer.texture,
+                outputTexture: frameBuffer.displayTexture,
                 drawable: drawable,
                 frameInfo: (width: width, height: height, aspect: Double(width) / Double(height))
             )
@@ -268,16 +270,16 @@ final class CameraSenderRenderer: NSObject, MTKViewDelegate, AVCaptureVideoDataO
                 guard let self else { return }
 
                 if let sender = self.senderLock.withLock({ $0 }) {
-                    let pointer = frameBuffer.buffer.contents().assumingMemoryBound(to: UInt8.self)
+                    let pointer = frameBuffer.ndiBuffer.contents().assumingMemoryBound(to: UInt8.self)
                     sender.sendVideo(
                         width: frameBuffer.width,
                         height: frameBuffer.height,
-                        fourCC: .bgra,
+                        fourCC: .uyvy,
                         frameRate: self.frameRate,
                         aspectRatio: Float(frameBuffer.width) / Float(frameBuffer.height),
                         formatType: .progressive,
                         data: pointer,
-                        lineStride: frameBuffer.bytesPerRow
+                        lineStride: frameBuffer.ndiBytesPerRow
                     )
                 }
 
@@ -286,7 +288,7 @@ final class CameraSenderRenderer: NSObject, MTKViewDelegate, AVCaptureVideoDataO
 
             didSchedule = true
             commandBuffer.commit()
-            lastTexture = frameBuffer.texture
+            lastTexture = frameBuffer.displayTexture
             lastFrameInfo = (width: width, height: height, aspect: Double(width) / Double(height))
         } else if let lastTexture, let lastFrameInfo {
             guard let commandBuffer = commandQueue.makeCommandBuffer() else {
@@ -384,29 +386,32 @@ final class CameraSenderRenderer: NSObject, MTKViewDelegate, AVCaptureVideoDataO
 
     // MARK: - Metal Helpers
 
-    /// Ensures a ring of shared buffers for GPU conversion exists at the requested size.
+    /// Ensures a ring of frame buffers exists at the requested size.
+    /// Each buffer contains a shared UYVY buffer for NDI and a private BGRA texture for display.
     private func ensureFrameBuffer(width: Int, height: Int, index: Int) -> FrameBuffer? {
         if frameBuffers.first?.width != width || frameBuffers.first?.height != height || frameBuffers.count != maxInFlightFrames {
             frameBuffers = (0..<maxInFlightFrames).compactMap { _ in
-                let bytesPerRow = align(value: width * 4, alignment: 64)
-                guard let buffer = device.makeBuffer(length: bytesPerRow * height, options: .storageModeShared) else {
+                // UYVY: 2 bytes per pixel
+                let ndiBytesPerRow = align(value: width * 2, alignment: 64)
+                guard let ndiBuffer = device.makeBuffer(length: ndiBytesPerRow * height, options: .storageModeShared) else {
                     return nil
                 }
 
-                let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+                // Display texture: BGRA, GPU-only access
+                let displayDescriptor = MTLTextureDescriptor.texture2DDescriptor(
                     pixelFormat: .bgra8Unorm,
                     width: width,
                     height: height,
                     mipmapped: false
                 )
-                descriptor.usage = [.shaderRead, .renderTarget]
-                descriptor.storageMode = .shared
+                displayDescriptor.usage = [.shaderRead, .shaderWrite]
+                displayDescriptor.storageMode = .private
 
-                guard let texture = buffer.makeTexture(descriptor: descriptor, offset: 0, bytesPerRow: bytesPerRow) else {
+                guard let displayTexture = device.makeTexture(descriptor: displayDescriptor) else {
                     return nil
                 }
 
-                return FrameBuffer(buffer: buffer, texture: texture, bytesPerRow: bytesPerRow, width: width, height: height)
+                return FrameBuffer(ndiBuffer: ndiBuffer, displayTexture: displayTexture, ndiBytesPerRow: ndiBytesPerRow, width: width, height: height)
             }
         }
 
