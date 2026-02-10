@@ -8,6 +8,7 @@ DerivedData/
 .netrc
 
 # manually added
+NDIKit/.build
 Vendor/NDI-SDK/
 Build/
 *.xcworkspace/xcuserdata/
