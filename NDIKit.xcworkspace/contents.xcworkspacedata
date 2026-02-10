@@ -8,10 +8,13 @@
       location = "group:CLAUDE.md">
    </FileRef>
    <FileRef
+      location = "group:NDIKit">
+   </FileRef>
+   <FileRef
       location = "group:Scripts">
    </FileRef>
    <FileRef
-      location = "group:NDIKit">
+      location = "group:Vendor">
    </FileRef>
    <FileRef
       location = "group:Frameworks/NDIKitC.xcframework">
