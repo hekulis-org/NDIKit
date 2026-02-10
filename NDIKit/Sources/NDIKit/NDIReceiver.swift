@@ -1,14 +1,38 @@
 import NDIKitC
 
 /// Receives video, audio, and metadata from an NDI source.
+///
+/// Create a receiver, connect it to an ``NDISource``, then call
+/// ``capture(timeout:)`` (or the typed variants) to pull frames.
+///
+/// ```swift
+/// guard let receiver = NDIReceiver() else { return }
+/// receiver.connect(to: source)
+///
+/// switch receiver.capture() {
+/// case .video(let frame):
+///     // process video
+/// case .audio(let frame):
+///     // process audio
+/// default:
+///     break
+/// }
+/// ```
 public final class NDIReceiver: @unchecked Sendable {
     private let instance: NDIlib_recv_instance_t
 
-    /// Bandwidth settings for receiving.
+    /// The bandwidth mode used when receiving from a source.
+    ///
+    /// Higher bandwidth modes deliver better quality at the cost of
+    /// increased network usage.
     public enum Bandwidth: Sendable {
+        /// Receive metadata only — no video or audio.
         case metadataOnly
+        /// Receive audio only — no video.
         case audioOnly
+        /// Receive the lowest quality video and audio.
         case lowest
+        /// Receive the highest quality video and audio.
         case highest
 
         var cValue: NDIlib_recv_bandwidth_e {
@@ -21,13 +45,22 @@ public final class NDIReceiver: @unchecked Sendable {
         }
     }
 
-    /// Color format preferences for receiving video.
+    /// The preferred color format for received video frames.
+    ///
+    /// The NDI SDK will convert frames to the requested format when
+    /// possible.
     public enum ColorFormat: Sendable {
+        /// BGRX for opaque frames, BGRA for frames with alpha.
         case bgrxBgra
+        /// UYVY for opaque frames, BGRA for frames with alpha.
         case uyvyBgra
+        /// RGBX for opaque frames, RGBA for frames with alpha.
         case rgbxRgba
+        /// UYVY for opaque frames, RGBA for frames with alpha.
         case uyvyRgba
+        /// The fastest format for the current platform.
         case fastest
+        /// The highest quality format available.
         case best
 
         var cValue: NDIlib_recv_color_format_e {
@@ -42,23 +75,38 @@ public final class NDIReceiver: @unchecked Sendable {
         }
     }
 
-    /// Configuration options for creating a receiver.
+    /// Configuration options for creating an ``NDIReceiver``.
     public struct Configuration: Sendable {
-        /// The source to connect to.
+        /// The source to connect to immediately, or `nil` to connect later
+        /// via ``NDIReceiver/connect(to:)``.
         public var source: NDISource?
 
-        /// Preferred color format for video.
+        /// The preferred color format for received video frames.
         public var colorFormat: ColorFormat
 
-        /// Bandwidth setting.
+        /// The bandwidth mode to use when receiving.
         public var bandwidth: Bandwidth
 
-        /// Whether to allow interlaced video fields.
+        /// A Boolean value that indicates whether the receiver should
+        /// deliver interlaced video as separate fields.
         public var allowVideoFields: Bool
 
-        /// Name for this receiver.
+        /// A display name for this receiver.
+        ///
+        /// Pass `nil` to let the SDK generate a default name.
         public var name: String?
 
+        /// Creates a receiver configuration.
+        ///
+        /// - Parameters:
+        ///   - source: The source to connect to, or `nil`.
+        ///   - colorFormat: Preferred video color format. Defaults to
+        ///     ``ColorFormat/uyvyBgra``.
+        ///   - bandwidth: Bandwidth mode. Defaults to
+        ///     ``Bandwidth/highest``.
+        ///   - allowVideoFields: Whether to allow interlaced fields.
+        ///     Defaults to `true`.
+        ///   - name: A display name for the receiver, or `nil`.
         public init(
             source: NDISource? = nil,
             colorFormat: ColorFormat = .uyvyBgra,
@@ -74,12 +122,19 @@ public final class NDIReceiver: @unchecked Sendable {
         }
     }
 
-    /// Create a new receiver with default configuration.
+    /// Creates a receiver with the default configuration.
+    ///
+    /// - Returns: A new receiver, or `nil` if the NDI library could not
+    ///   create the receiver instance.
     public convenience init?() {
         self.init(configuration: Configuration())
     }
 
-    /// Create a new receiver with the specified configuration.
+    /// Creates a receiver with the specified configuration.
+    ///
+    /// - Parameter configuration: The configuration to use.
+    /// - Returns: A new receiver, or `nil` if the NDI library could not
+    ///   create the receiver instance.
     public init?(configuration: Configuration) {
         let instance: NDIlib_recv_instance_t? = configuration.name.withOptionalCString { namePtr in
             if let source = configuration.source {
@@ -110,7 +165,10 @@ public final class NDIReceiver: @unchecked Sendable {
         NDIlib_recv_destroy(instance)
     }
 
-    /// Connect to a source. Pass nil to disconnect.
+    /// Connects to the specified source, or disconnects if `nil`.
+    ///
+    /// - Parameter source: The source to connect to, or `nil` to
+    ///   disconnect from the current source.
     public func connect(to source: NDISource?) {
         if let source {
             source.withCSource { cSource in
@@ -122,12 +180,17 @@ public final class NDIReceiver: @unchecked Sendable {
         }
     }
 
-    /// The number of current connections (0 or 1).
+    /// The number of active connections to the source (typically `0` or `1`).
     public var connectionCount: Int {
         Int(NDIlib_recv_get_no_connections(instance))
     }
 
-    /// Set the tally state to send upstream.
+    /// Sends tally information upstream to the connected source.
+    ///
+    /// - Parameters:
+    ///   - onProgram: `true` if this receiver's source is on program
+    ///     (live / on-air).
+    ///   - onPreview: `true` if this receiver's source is on preview.
     public func setTally(onProgram: Bool, onPreview: Bool) {
         var tally = NDIlib_tally_t()
         tally.on_program = onProgram
@@ -137,9 +200,13 @@ public final class NDIReceiver: @unchecked Sendable {
 
     // MARK: - Frame Capture
 
-    /// Capture the next available frame (video, audio, or metadata).
-    /// - Parameter timeout: Maximum time to wait in milliseconds.
-    /// - Returns: The captured frame, or `.none` if timed out, or `.error` if disconnected.
+    /// Captures the next available frame of any type.
+    ///
+    /// - Parameter timeout: The maximum time to wait, in milliseconds.
+    ///   Defaults to `5000`.
+    /// - Returns: A ``CaptureResult`` containing the captured frame, or
+    ///   ``CaptureResult/none`` if the call timed out, or
+    ///   ``CaptureResult/error`` if the connection was lost.
     public func capture(timeout: UInt32 = 5000) -> CaptureResult {
         var videoFrame = NDIlib_video_frame_v2_t()
         var audioFrame = NDIlib_audio_frame_v2_t()
@@ -176,9 +243,12 @@ public final class NDIReceiver: @unchecked Sendable {
         }
     }
 
-    /// Capture only video frames, ignoring audio and metadata.
-    /// - Parameter timeout: Maximum time to wait in milliseconds.
-    /// - Returns: A video frame, or nil if timed out or an error occurred.
+    /// Captures only video frames, ignoring audio and metadata.
+    ///
+    /// - Parameter timeout: The maximum time to wait, in milliseconds.
+    ///   Defaults to `5000`.
+    /// - Returns: A video frame, or `nil` if the call timed out or an
+    ///   error occurred.
     public func captureVideo(timeout: UInt32 = 5000) -> NDIVideoFrame? {
         var videoFrame = NDIlib_video_frame_v2_t()
 
@@ -196,9 +266,12 @@ public final class NDIReceiver: @unchecked Sendable {
         return nil
     }
 
-    /// Capture only audio frames, ignoring video and metadata.
-    /// - Parameter timeout: Maximum time to wait in milliseconds.
-    /// - Returns: An audio frame, or nil if timed out or an error occurred.
+    /// Captures only audio frames, ignoring video and metadata.
+    ///
+    /// - Parameter timeout: The maximum time to wait, in milliseconds.
+    ///   Defaults to `5000`.
+    /// - Returns: An audio frame, or `nil` if the call timed out or an
+    ///   error occurred.
     public func captureAudio(timeout: UInt32 = 5000) -> NDIAudioFrame? {
         var audioFrame = NDIlib_audio_frame_v2_t()
 
@@ -218,14 +291,18 @@ public final class NDIReceiver: @unchecked Sendable {
 
     // MARK: - Performance Monitoring
 
-    /// Performance statistics for the receiver.
+    /// Cumulative frame counts reported by the receiver.
     public struct Performance: Sendable {
+        /// The number of video frames.
         public let videoFrames: Int64
+        /// The number of audio frames.
         public let audioFrames: Int64
+        /// The number of metadata frames.
         public let metadataFrames: Int64
     }
 
-    /// Get the total number of frames received.
+    /// The total number of frames received since the connection was
+    /// established.
     public var totalFrames: Performance {
         var total = NDIlib_recv_performance_t()
         NDIlib_recv_get_performance(instance, &total, nil)
@@ -236,7 +313,8 @@ public final class NDIReceiver: @unchecked Sendable {
         )
     }
 
-    /// Get the number of frames that were dropped.
+    /// The number of frames that were dropped since the connection was
+    /// established.
     public var droppedFrames: Performance {
         var dropped = NDIlib_recv_performance_t()
         NDIlib_recv_get_performance(instance, nil, &dropped)
@@ -247,14 +325,17 @@ public final class NDIReceiver: @unchecked Sendable {
         )
     }
 
-    /// Current queue depths.
+    /// The number of frames currently buffered in each receive queue.
     public struct QueueDepth: Sendable {
+        /// The number of buffered video frames.
         public let videoFrames: Int
+        /// The number of buffered audio frames.
         public let audioFrames: Int
+        /// The number of buffered metadata frames.
         public let metadataFrames: Int
     }
 
-    /// Get the current queue depths for each frame type.
+    /// The current queue depths for video, audio, and metadata.
     public var queueDepth: QueueDepth {
         var queue = NDIlib_recv_queue_t()
         NDIlib_recv_get_queue(instance, &queue)

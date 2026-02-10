@@ -1,24 +1,51 @@
 import Foundation
 import NDIKitC
 
-/// Sends video, audio, and metadata to an NDI receiver.
+/// Sends video, audio, and metadata over the network via NDI.
+///
+/// Create a sender, then call ``sendVideo(width:height:fourCC:frameRate:aspectRatio:formatType:timecode:data:lineStride:metadata:)``
+/// or ``sendVideoAsync(width:height:fourCC:frameRate:aspectRatio:formatType:timecode:data:lineStride:metadata:)``
+/// to transmit frames to connected receivers.
+///
+/// ```swift
+/// let config = NDISender.Configuration(name: "My Source")
+/// guard let sender = NDISender(configuration: config) else { return }
+/// sender.sendVideo(width: 1920, height: 1080, ...)
+/// ```
 public final class NDISender: @unchecked Sendable {
     private let instance: NDIlib_send_instance_t
 
-    /// Configuration options for creating a sender.
+    /// Configuration options for creating an ``NDISender``.
     public struct Configuration: Sendable {
-        /// Name of the NDI source.
+        /// The name that receivers will see for this source.
+        ///
+        /// Pass `nil` to let the SDK generate a default name.
         public var name: String?
 
-        /// Groups that this source belongs to.
+        /// The NDI groups this source belongs to.
+        ///
+        /// Pass `nil` to use the default groups.
         public var groups: String?
 
-        /// Whether to clock video frames.
+        /// A Boolean value that indicates whether the sender should
+        /// clock video frame submissions to the declared frame rate.
         public var clockVideo: Bool
 
-        /// Whether to clock audio frames.
+        /// A Boolean value that indicates whether the sender should
+        /// clock audio frame submissions to the declared sample rate.
         public var clockAudio: Bool
 
+        /// Creates a sender configuration.
+        ///
+        /// - Parameters:
+        ///   - name: The source name visible to receivers. `nil` uses a
+        ///     default name.
+        ///   - groups: NDI groups this source belongs to. `nil` uses the
+        ///     default groups.
+        ///   - clockVideo: Whether to clock video submissions. Defaults
+        ///     to `true`.
+        ///   - clockAudio: Whether to clock audio submissions. Defaults
+        ///     to `true`.
         public init(
             name: String? = nil,
             groups: String? = nil,
@@ -32,7 +59,11 @@ public final class NDISender: @unchecked Sendable {
         }
     }
 
-    /// Create a new sender with the specified configuration.
+    /// Creates a sender with the specified configuration.
+    ///
+    /// - Parameter configuration: The configuration to use.
+    /// - Returns: A new sender, or `nil` if the NDI library could not
+    ///   create the sender instance.
     public init?(configuration: Configuration) {
         let instance: NDIlib_send_instance_t? = configuration.name.withOptionalCString { namePtr in
             configuration.groups.withOptionalCString { groupsPtr in
@@ -53,8 +84,27 @@ public final class NDISender: @unchecked Sendable {
         NDIlib_send_destroy(instance)
     }
 
-    /// Send a video frame using the provided buffer.
-    /// - Important: The memory backing `data` must stay valid for the duration of this call.
+    /// Sends a video frame synchronously.
+    ///
+    /// This call blocks until the frame has been submitted to the NDI SDK.
+    ///
+    /// - Parameters:
+    ///   - width: Frame width in pixels.
+    ///   - height: Frame height in pixels.
+    ///   - fourCC: The pixel format of the frame data.
+    ///   - frameRate: Frame rate expressed as a fraction
+    ///     (numerator / denominator). For example, 30 fps is `(30000, 1001)`.
+    ///   - aspectRatio: Picture aspect ratio. Pass `0` for square pixels.
+    ///   - formatType: Whether the frame is progressive or interlaced.
+    ///     Defaults to ``FrameFormat/progressive``.
+    ///   - timecode: An optional timecode in 100-nanosecond intervals.
+    ///     Pass `nil` to let the SDK synthesize a timecode.
+    ///   - data: A pointer to the raw pixel data.
+    ///   - lineStride: The number of bytes per row in the pixel buffer.
+    ///   - metadata: Optional XML metadata to attach to the frame.
+    ///
+    /// - Important: The memory backing `data` must remain valid for the
+    ///   duration of this call.
     public func sendVideo(
         width: Int,
         height: Int,
@@ -90,8 +140,29 @@ public final class NDISender: @unchecked Sendable {
         }
     }
 
-    /// Send a video frame asynchronously.
-    /// - Important: The memory backing `data` must stay valid until the next call to send a video frame.
+    /// Sends a video frame asynchronously.
+    ///
+    /// Returns immediately while the NDI SDK transmits the frame in the
+    /// background.
+    ///
+    /// - Parameters:
+    ///   - width: Frame width in pixels.
+    ///   - height: Frame height in pixels.
+    ///   - fourCC: The pixel format of the frame data.
+    ///   - frameRate: Frame rate expressed as a fraction
+    ///     (numerator / denominator). For example, 30 fps is `(30000, 1001)`.
+    ///   - aspectRatio: Picture aspect ratio. Pass `0` for square pixels.
+    ///   - formatType: Whether the frame is progressive or interlaced.
+    ///     Defaults to ``FrameFormat/progressive``.
+    ///   - timecode: An optional timecode in 100-nanosecond intervals.
+    ///     Pass `nil` to let the SDK synthesize a timecode.
+    ///   - data: A pointer to the raw pixel data.
+    ///   - lineStride: The number of bytes per row in the pixel buffer.
+    ///   - metadata: Optional XML metadata to attach to the frame.
+    ///
+    /// - Important: The memory backing `data` must remain valid until the
+    ///   **next** call to a send-video method, because the SDK may still be
+    ///   reading from the buffer.
     public func sendVideoAsync(
         width: Int,
         height: Int,
@@ -127,7 +198,7 @@ public final class NDISender: @unchecked Sendable {
         }
     }
 
-    /// The current number of connections to this sender.
+    /// The number of receivers currently connected to this sender.
     public var connectionCount: Int {
         Int(NDIlib_send_get_no_connections(instance, 0))
     }

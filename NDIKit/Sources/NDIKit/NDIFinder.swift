@@ -1,20 +1,42 @@
 import NDIKitC
 
 /// Discovers NDI sources available on the network.
+///
+/// Use an `NDIFinder` to scan for NDI senders on the local network.
+///
+/// ```swift
+/// guard let finder = NDIFinder() else { return }
+/// finder.waitForSources(timeout: 5000)
+/// let sources = finder.sources
+/// ```
+///
+/// - Note: On iOS, NDI discovery requires Bonjour (`_ndi._tcp`)
+///   and Local Network permission.
 public final class NDIFinder: @unchecked Sendable {
     private let instance: NDIlib_find_instance_t
 
-    /// Configuration options for creating a finder.
+    /// Configuration options for creating an ``NDIFinder``.
     public struct Configuration: Sendable {
-        /// Whether to include sources running on the local machine.
+        /// A Boolean value that indicates whether sources running on the
+        /// local machine should be included in the results.
         public var showLocalSources: Bool
 
-        /// Groups to search for sources in. Nil means default groups.
+        /// The NDI groups to search for sources in.
+        ///
+        /// Pass `nil` to search the default groups.
         public var groups: String?
 
-        /// Additional IP addresses to query for sources (comma-separated).
+        /// Additional IP addresses to query for sources, as a
+        /// comma-separated string.
         public var extraIPs: String?
 
+        /// Creates a finder configuration.
+        ///
+        /// - Parameters:
+        ///   - showLocalSources: Whether to include local sources.
+        ///     Defaults to `true`.
+        ///   - groups: Groups to search. `nil` uses the default groups.
+        ///   - extraIPs: Additional IP addresses to query, comma-separated.
         public init(
             showLocalSources: Bool = true,
             groups: String? = nil,
@@ -26,12 +48,19 @@ public final class NDIFinder: @unchecked Sendable {
         }
     }
 
-    /// Create a new finder with default configuration.
+    /// Creates a finder with the default configuration.
+    ///
+    /// - Returns: A new finder, or `nil` if the NDI library could not
+    ///   create the finder instance.
     public convenience init?() {
         self.init(configuration: Configuration())
     }
 
-    /// Create a new finder with the specified configuration.
+    /// Creates a finder with the specified configuration.
+    ///
+    /// - Parameter configuration: The configuration to use.
+    /// - Returns: A new finder, or `nil` if the NDI library could not
+    ///   create the finder instance.
     public init?(configuration: Configuration) {
         let instance: NDIlib_find_instance_t? = configuration.groups.withOptionalCString { groupsPtr in
             configuration.extraIPs.withOptionalCString { extraIPsPtr in
@@ -51,7 +80,7 @@ public final class NDIFinder: @unchecked Sendable {
         NDIlib_find_destroy(instance)
     }
 
-    /// Get the current list of discovered sources.
+    /// The current list of discovered NDI sources.
     public var sources: [NDISource] {
         var count: UInt32 = 0
         guard let sourcesPtr = NDIlib_find_get_current_sources(instance, &count) else {
@@ -60,9 +89,11 @@ public final class NDIFinder: @unchecked Sendable {
         return (0..<Int(count)).map { NDISource(sourcesPtr[$0]) }
     }
 
-    /// Wait until the list of sources changes.
-    /// - Parameter timeout: Maximum time to wait in milliseconds.
-    /// - Returns: `true` if sources changed, `false` if timed out.
+    /// Waits until the list of sources changes or the timeout expires.
+    ///
+    /// - Parameter timeout: The maximum time to wait, in milliseconds.
+    /// - Returns: `true` if the source list changed, `false` if the call
+    ///   timed out.
     @discardableResult
     public func waitForSources(timeout: UInt32) -> Bool {
         NDIlib_find_wait_for_sources(instance, timeout)
