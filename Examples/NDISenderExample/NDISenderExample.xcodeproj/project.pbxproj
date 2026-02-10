@@ -8,10 +8,12 @@
 
 /* Begin PBXBuildFile section */
 		646774A12F34C0A000890794 /* NDIKit in Frameworks */ = {isa = PBXBuildFile; productRef = 646774A32F34C0A000890794 /* NDIKit */; };
+		64AAF3822F3BE8A2007410D7 /* Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 64AAF3812F3BE8A2007410D7 /* Info.plist */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		646774372F33882A00890793 /* NDISenderExample.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NDISenderExample.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		64AAF3812F3BE8A2007410D7 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -37,6 +39,7 @@
 		6467742E2F33882A00890793 = {
 			isa = PBXGroup;
 			children = (
+				64AAF3812F3BE8A2007410D7 /* Info.plist */,
 				646774392F33882A00890793 /* NDISenderExample */,
 				646774382F33882A00890793 /* Products */,
 			);
@@ -118,6 +121,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				64AAF3822F3BE8A2007410D7 /* Info.plist in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -263,7 +267,7 @@
 				DEVELOPMENT_TEAM = N324PDC8MD;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSBonjourServices = _ndi._tcp;
+				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Used to capture video for NDI streaming.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "NDI Video Streaming.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -303,7 +307,7 @@
 				DEVELOPMENT_TEAM = N324PDC8MD;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSBonjourServices = _ndi._tcp;
+				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Used to capture video for NDI streaming.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "NDI Video Streaming.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
