@@ -8,26 +8,11 @@
 import Metal
 import MetalKit
 import NDIKit
+import NDIKitMetal
 import os
 
 /// Renders NDI frames using Metal and provides them to an MTKView.
 final class MetalVideoRenderer: NSObject, MTKViewDelegate, NDIFrameConsumer, @unchecked Sendable {
-    /// Supported compute pipelines keyed by input format.
-    private enum PipelineKind: CaseIterable {
-        case bgra
-        case rgba
-        case uyvy
-        case p216
-    }
-
-    /// Parameters passed to conversion compute shaders.
-    private struct ConversionParams {
-        var width: UInt32
-        var height: UInt32
-        var bytesPerRow: UInt32
-        var uvPlaneOffset: UInt32
-        var flags: UInt32
-    }
 
     /// Tracks a frame and its backing buffer in flight on the GPU.
     private struct InFlightFrame {
@@ -41,7 +26,7 @@ final class MetalVideoRenderer: NSObject, MTKViewDelegate, NDIFrameConsumer, @un
     private let device: MTLDevice
     private let commandQueue: MTLCommandQueue
     private let renderPipeline: MTLRenderPipelineState
-    private let computePipelines: [PipelineKind: MTLComputePipelineState]
+    private let converter: NDIVideoFormatConverter
     private let samplerState: MTLSamplerState
     private let maxInFlightFrames = 3
     private let inFlightSemaphore: DispatchSemaphore
@@ -83,21 +68,7 @@ final class MetalVideoRenderer: NSObject, MTKViewDelegate, NDIFrameConsumer, @un
             renderDescriptor.colorAttachments[0].pixelFormat = view.colorPixelFormat
 
             let renderPipeline = try device.makeRenderPipelineState(descriptor: renderDescriptor)
-
-            guard let bgraFunction = library.makeFunction(name: "bgra_to_bgra"),
-                  let rgbaFunction = library.makeFunction(name: "rgba_to_bgra"),
-                  let uyvyFunction = library.makeFunction(name: "uyvy_to_bgra"),
-                  let p216Function = library.makeFunction(name: "p216_to_bgra") else {
-                print("MetalVideoRenderer: Missing compute shader functions")
-                return nil
-            }
-
-            let computePipelines: [PipelineKind: MTLComputePipelineState] = [
-                .bgra: try device.makeComputePipelineState(function: bgraFunction),
-                .rgba: try device.makeComputePipelineState(function: rgbaFunction),
-                .uyvy: try device.makeComputePipelineState(function: uyvyFunction),
-                .p216: try device.makeComputePipelineState(function: p216Function)
-            ]
+            let converter = try NDIVideoFormatConverter(device: device)
 
             let samplerDescriptor = MTLSamplerDescriptor()
             samplerDescriptor.minFilter = .linear
@@ -113,7 +84,7 @@ final class MetalVideoRenderer: NSObject, MTKViewDelegate, NDIFrameConsumer, @un
             self.device = device
             self.commandQueue = commandQueue
             self.renderPipeline = renderPipeline
-            self.computePipelines = computePipelines
+            self.converter = converter
             self.samplerState = samplerState
         } catch {
             print("MetalVideoRenderer: Pipeline creation failed: \(error)")
@@ -210,8 +181,7 @@ final class MetalVideoRenderer: NSObject, MTKViewDelegate, NDIFrameConsumer, @un
         let frameInfo: (width: Int, height: Int, aspect: Double)
 
         if let pendingFrame {
-            guard let pipelineKind = pipelineKind(for: pendingFrame.fourCC),
-                  let pipeline = computePipelines[pipelineKind] else {
+            guard let pipeline = converter.decodePipeline(for: pendingFrame.fourCC) else {
                 print("MetalVideoRenderer: Unsupported format \(pendingFrame.fourCC)")
                 return
             }
@@ -239,24 +209,18 @@ final class MetalVideoRenderer: NSObject, MTKViewDelegate, NDIFrameConsumer, @un
             let inFlightFrame = InFlightFrame(frame: pendingFrame, buffer: buffer, width: width, height: height, aspect: aspect)
             inFlightFramesLock.withLock { $0[frameIndex] = inFlightFrame }
 
-            var params = buildParams(for: pendingFrame)
+            var params = NDIConversionParams.decode(frame: pendingFrame)
             guard let computeEncoder = commandBuffer.makeComputeCommandEncoder() else {
                 inFlightFramesLock.withLock { $0[frameIndex] = nil }
                 return
             }
             computeEncoder.setComputePipelineState(pipeline)
             computeEncoder.setBuffer(buffer, offset: 0, index: 0)
-            computeEncoder.setBytes(&params, length: MemoryLayout<ConversionParams>.stride, index: 1)
+            computeEncoder.setBytes(&params, length: MemoryLayout<NDIConversionParams>.stride, index: 1)
             computeEncoder.setTexture(outputTexture, index: 0)
 
-            let threadExecutionWidth = pipeline.threadExecutionWidth
-            let maxThreads = pipeline.maxTotalThreadsPerThreadgroup
-            let threadsPerThreadgroup = MTLSize(
-                width: threadExecutionWidth,
-                height: max(1, maxThreads / threadExecutionWidth),
-                depth: 1
-            )
-            let threadsPerGrid = MTLSize(width: width, height: height, depth: 1)
+            let threadsPerGrid = converter.decodeThreadsPerGrid(width: width, height: height)
+            let threadsPerThreadgroup = converter.threadsPerThreadgroup(for: pipeline)
             computeEncoder.dispatchThreads(threadsPerGrid, threadsPerThreadgroup: threadsPerThreadgroup)
             computeEncoder.endEncoding()
 
@@ -313,60 +277,18 @@ final class MetalVideoRenderer: NSObject, MTKViewDelegate, NDIFrameConsumer, @un
 
     }
 
-    /// Maps a FourCC to the matching compute pipeline.
-    private func pipelineKind(for fourCC: FourCC) -> PipelineKind? {
-        if fourCC == .bgra || fourCC == .bgrx {
-            return .bgra
-        }
-        if fourCC == .rgba || fourCC == .rgbx {
-            return .rgba
-        }
-        if fourCC == .uyvy {
-            return .uyvy
-        }
-        if fourCC == .p216 {
-            return .p216
-        }
-        return nil
-    }
-
-    /// Builds compute parameters for a given frame.
-    private func buildParams(for frame: NDIVideoFrame) -> ConversionParams {
-        let hasAlpha: Bool
-        if frame.fourCC == .bgra || frame.fourCC == .rgba {
-            hasAlpha = true
-        } else {
-            hasAlpha = false
-        }
-
-        let uvPlaneOffset = frame.fourCC == .p216 ? UInt32(frame.lineStride * frame.height) : 0
-        let flags: UInt32 = hasAlpha ? 1 : 0
-
-        return ConversionParams(
-            width: UInt32(frame.width),
-            height: UInt32(frame.height),
-            bytesPerRow: UInt32(frame.lineStride),
-            uvPlaneOffset: uvPlaneOffset,
-            flags: flags
-        )
-    }
-
     /// Allocates and copies frame data into a shared Metal buffer.
     private func makeBuffer(from frame: NDIVideoFrame) -> MTLBuffer? {
         guard let baseAddress = frame.data?.baseAddress else {
             return nil
         }
-        let length = dataLength(for: frame)
+        let length = NDIConversionParams.bufferLength(
+            bytesPerRow: frame.lineStride,
+            height: frame.height,
+            fourCC: frame.fourCC
+        )
         let mutableBase = UnsafeMutableRawPointer(mutating: baseAddress)
         return device.makeBuffer(bytesNoCopy: mutableBase, length: length, options: .storageModeShared, deallocator: nil)
-    }
-
-    /// Computes the byte length for a frame buffer.
-    private func dataLength(for frame: NDIVideoFrame) -> Int {
-        if frame.fourCC == .p216 {
-            return frame.lineStride * frame.height * 2
-        }
-        return frame.lineStride * frame.height
     }
 
     /// Ensures a reusable output texture exists for the given size.

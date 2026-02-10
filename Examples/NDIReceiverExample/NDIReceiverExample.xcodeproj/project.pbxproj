@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		646774702F33910000890793 /* NDIKit in Frameworks */ = {isa = PBXBuildFile; productRef = 6467746F2F33910000890793 /* NDIKit */; };
+		64677471300A000000890793 /* NDIKitMetal in Frameworks */ = {isa = PBXBuildFile; productRef = 64677472300A000000890793 /* NDIKitMetal */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -28,6 +29,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				646774702F33910000890793 /* NDIKit in Frameworks */,
+				64677471300A000000890793 /* NDIKitMetal in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -71,6 +73,7 @@
 			name = NDIReceiverExample;
 			packageProductDependencies = (
 				6467746F2F33910000890793 /* NDIKit */,
+				64677472300A000000890793 /* NDIKitMetal */,
 			);
 			productName = NDIReceiverExample;
 			productReference = 646774572F338AAE00890793 /* NDIReceiverExample.app */;
@@ -394,6 +397,10 @@
 		6467746F2F33910000890793 /* NDIKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = NDIKit;
+		};
+		64677472300A000000890793 /* NDIKitMetal */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = NDIKitMetal;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

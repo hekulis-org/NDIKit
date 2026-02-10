@@ -16,6 +16,11 @@ let package = Package(
             name: "NDIKit",
             targets: ["NDIKit"]
         ),
+        // Metal compute shaders for NDI format conversion.
+        .library(
+            name: "NDIKitMetal",
+            targets: ["NDIKitMetal"]
+        ),
     ],
 
 
@@ -37,6 +42,20 @@ let package = Package(
                 .linkedFramework("VideoToolbox"),
                 .linkedFramework("CoreMedia"),
                 .linkedFramework("CoreVideo"),
+            ]
+        ),
+
+        // Metal compute shaders for NDI format conversion.
+        .target(
+            name: "NDIKitMetal",
+            dependencies: ["NDIKit"],
+            path: "Sources/NDIKitMetal",
+            resources: [.process("Resources")],
+            swiftSettings: [
+                .enableUpcomingFeature("StrictConcurrency"),
+            ],
+            linkerSettings: [
+                .linkedFramework("Metal"),
             ]
         ),
 
