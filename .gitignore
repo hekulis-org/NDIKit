@@ -11,5 +11,6 @@ DerivedData/
 NDIKit/.build
 Vendor/NDI-SDK/
 Build/
+Frameworks/
 *.xcworkspace/xcuserdata/
 .claude/

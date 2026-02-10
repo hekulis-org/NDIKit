@@ -59,10 +59,15 @@ let package = Package(
             ]
         ),
 
-        // Binary XCFramework containing the NDI SDK
+        // Binary XCFramework containing the NDI SDK.
+        // Hosted on GitHub Releases. Updated by Scripts/release.sh.
+        // Binary URL must use the GitHub API asset format (not browser download URL).
+        // Xcode's SPM resolver cannot follow the 302 redirect from browser URLs.
+        // The asset ID is set automatically by Scripts/release.sh after upload.
         .binaryTarget(
             name: "NDIKitC",
-            path: "../Frameworks/NDIKitC.xcframework"
+            url: "https://api.github.com/repos/hekulis-org/NDIKit/releases/assets/354176117.zip",
+            checksum: "328e477b500b5d5747249bafa431d0569e2b89c58427cd13ebe46938384e3c96"
         ),
 
 

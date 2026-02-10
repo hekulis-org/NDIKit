@@ -8,7 +8,6 @@
 
 /* Begin PBXBuildFile section */
 		646774A12F34C0A000890794 /* NDIKit in Frameworks */ = {isa = PBXBuildFile; productRef = 646774A32F34C0A000890794 /* NDIKit */; };
-		64AAF3822F3BE8A2007410D7 /* Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 64AAF3812F3BE8A2007410D7 /* Info.plist */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -121,7 +120,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				64AAF3822F3BE8A2007410D7 /* Info.plist in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

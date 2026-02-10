@@ -1,26 +1,27 @@
 # NDIKit
 
-This is a multi-platform Swift Package wrapper around the official NDI SDK.
+NDIKit is a multi-platform Swift wrapper around the official NDI SDK C libraries.
 
-It uses Swift 6 with strict concurrency. It is packaged for Swift Package Manager.
+It uses Swift 6 with strict concurrency. It is packaged for use with Swift Package Manager.
 
 The goal is that you can just import this package and get going without having to fiddle with low level C/C++ build configurations or have to use C++ code/API Objects inside of your Swift code.
 
-Supported platforms: iOS, macOS.
-NOTE: iOS Simulators are NOT supported b/c NDI does not provide SDK binaries for that platform.
+Supported platforms: iOS, macOS.  
+NOTE: iOS Simulators are NOT supported b/c NDI does not provide SDK binaries for that architecture.
 
 ## Usage
 
-Add the Swift package as usual.
-Refer to the example projects for detailed usage.
+- Add the Swift package as usual.
+- Add the required entitlements to your project.
+- Refer to the example projects for detailed usage.
 
 ### Required Entitlements
 
 Certain entitlements are required and must be configured by apps using this library.
 
-- **NDI discovery requires Bonjour**: `NSBonjourServices = _ndi._tcp`
-- **Local Network**
-- **Multicast Networking**
+- **NDI discovery requires Bonjour for Multicast discovery**: `NSBonjourServices = _ndi._tcp`
+- **Local Network access**
+- **App Sandbox: Incoming Connections, Outgoing Connections** (macOS only)
 
 
 ### Networks Settings
@@ -30,9 +31,6 @@ Refer to [NDI's network switch settings](https://docs.ndi.video/all/using-ndi/us
 If multicast discovery is not working, you can configure receivers with IP address of senders.
 Alternatively you can install the NDI Tools and run NDI Access Manager and provide sender IPs there.
 
-### License
-
-Note the [licensing requirements from the upstream NDI SDK](https://docs.ndi.video/all/developing-with-ndi/sdk/licensing) that must be adhered to.
 
 ## Terminology Notes
 
@@ -40,10 +38,10 @@ NDI's SDK and Apple's CoreVideo APIs use different terms for video formats.
 
 NDI’s docs emphasize UYVY/UYVA as the most compatible/perf-friendly send path.
 
-NDI <==> Apple
-`UYVY` (8-bit 4:2:2 packed) <==> kCVPixelFormatType_422YpCbCr8
-`UYVA` (8-bit 4:2:2 + alpha) <==> No Apple equivalent
-`NV12` <==> `420v`(limited range) or `420f`(full range).
+NDI <==> Apple  
+`UYVY` (8-bit 4:2:2 packed) <==> kCVPixelFormatType_422YpCbCr8  
+`UYVA` (8-bit 4:2:2 + alpha) <==> No Apple equivalent  
+`NV12` <==> `420v`(limited range) or `420f`(full range)  
 
 
 ---
@@ -51,13 +49,16 @@ NDI <==> Apple
 
 # Developer Notes
 
-## Rebuilding the XCFramework
+How to update/contribute to this package.
+
+## Building the XCFramework
 
 **How it's Structured**
 
-- The original SDK files are copied to: `/Vendor/NDI-SDK`.
-- The build script removes unnecessary architectures and packages the libraries and headers into an XCFramework bundle for multi-platform use.
+- The original SDK files are copied to: `/Vendor/NDI-SDK` from the SDK default installation directory.
+- The build script removes unnecessary architectures, then packages the libraries and headers into an XCFramework bundle for multi-platform use.
 - Code in `NDIKit/Sources/NDIKit` is where all the Swift wrapper code lives.
+- Code in `NDIKit/Sources/NDIKitMetal` is another package with some convenient Metal code to convert video formats etc.
 - See 2 example projects for usage.
 
 **To Update to the latest SDK Version**
@@ -67,11 +68,26 @@ NDI <==> Apple
 `cp -R /Library/NDI\ SDK\ for\ Apple/lib/{iOS,macOS} Vendor/NDI-SDK/lib/`
 1. Copy the headers:
 `cp -R /Library/NDI\ SDK\ for\ Apple/include/* Vendor/NDI-SDK/include/`
-1. Run the build script:
-`./Scripts/build-xcframework.sh`
-1. Make sure it worked:
-`swift build`
-`swift test`
+1. Run the build script with the version matching the NDI SDK:
+`./Scripts/build-xcframework.sh <version>`
+1. Publish to GitHub Releases:
+`./Scripts/release.sh <version>`
+
+## Binary Distribution
+
+The NDIKitC.xcframework binary is hosted as a zip on GitHub Releases and referenced as a remote `.binaryTarget` in Package.swift. This avoids Git LFS and keeps the repo small.
+
+The `Frameworks/` directory is `.gitignore`d. It is only used locally during the build/release workflow.
+The `Vendor/NDI-SDK/` directory is `.gitignore`d. It is only used locally during the build/release workflow.
+
+**Important:** Package.swift must use the GitHub **API asset URL** format (`https://api.github.com/repos/.../releases/assets/ID.zip`), not the browser download URL. Xcode's SPM resolver cannot follow the 302 redirect from browser URLs. The `release.sh` script handles this automatically.
+
+**Release workflow:**
+
+1. `./Scripts/build-xcframework.sh <version>` — Builds the XCFramework, creates a zip, and computes the SHA-256 checksum. The version is embedded in the framework's `CFBundleShortVersionString`.
+2. `./Scripts/release.sh <version>` — Creates a draft GitHub Release, uploads the zip, looks up the asset ID, updates `Package.swift` with the API URL + checksum, commits, tags, pushes, then publishes the release.
+
+To delete a release: `./Scripts/delete-release.sh <version>`
 
 
 ## Not Implemented
@@ -95,12 +111,12 @@ NDI C SDK features not yet exposed in the NDIKit Swift wrapper:
 - **V210 ↔ P216 conversion** (`NDIlib_util_V210_to_P216` / `P216_to_V210`) — Convert between 10-bit packed and 16-bit semi-planar video formats.
 
 
-## TODO
-- min os versions should be variables in the build script
-- change development team in example apps
-- include proper license files
-- add tests
-- comment all classes & methods
-- sometimes see xcode warning: warning: umbrella header for module 'NDIKitC' does not include header 'Processing.NDI.Lib.cplusplus.h'
-- maybe move some common useful metal conversion code over to the NDIKit pkg.
+---
 
+
+# License
+
+- Repository licensing scope is documented in `LICENSE`.
+- NDIKit-authored code in this repository is licensed under MIT: see `NDIKit/LICENSE`.
+- Third-party NDI SDK licensing, attribution, and pass-through requirements are documented in `THIRD_PARTY_NOTICES.md`.
+- NDI SDK files are not relicensed by NDIKit and remain under upstream NDI terms.

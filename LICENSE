@@ -1,0 +1,14 @@
+Repository Licensing Notice
+
+This repository contains material under multiple licenses.
+
+1. NDIKit-authored source code is licensed under the MIT License.
+   - Full text: `NDIKit/LICENSE`
+
+2. NDI SDK files and related redistributable materials are provided under
+   upstream NDI terms from Vizrt NDI AB and are not relicensed by NDIKit.
+   - See: `THIRD_PARTY_NOTICES.md`
+   - See also the upstream NDI SDK license agreement.
+
+3. Some individual upstream SDK header files may use different terms, as
+   documented in `THIRD_PARTY_NOTICES.md`.

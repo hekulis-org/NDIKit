@@ -4,6 +4,11 @@ set -euo pipefail
 # Build NDIKitC.xcframework
 # Supports: macOS (arm64), iOS device (arm64)
 # Note: iOS Simulator not supported - NDI SDK has linker issues when converted
+#
+# Usage:
+#   ./Scripts/build-xcframework.sh [version]
+#   Example: ./Scripts/build-xcframework.sh 6.0.1
+#   If version is omitted, defaults to "0.0.0"
 
 # Colors
 RED='\033[0;31m'
@@ -11,7 +16,10 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-echo -e "${GREEN}Building NDIKitC.xcframework...${NC}"
+# Version argument (optional, defaults to 0.0.0)
+VERSION="${1:-0.0.0}"
+
+echo -e "${GREEN}Building NDIKitC.xcframework (version $VERSION)...${NC}"
 
 # Paths
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -20,6 +28,9 @@ VENDOR_DIR="$PROJECT_ROOT/Vendor/NDI-SDK"
 BUILD_DIR="$PROJECT_ROOT/Build"
 FRAMEWORKS_DIR="$PROJECT_ROOT/Frameworks"
 XCFRAMEWORK_NAME="NDIKitC.xcframework"
+NDIKIT_MIT_LICENSE_FILE="$PROJECT_ROOT/NDIKit/LICENSE"
+THIRD_PARTY_NOTICES_FILE="$PROJECT_ROOT/THIRD_PARTY_NOTICES.md"
+NDI_SDK_LICENSES_FILE="$VENDOR_DIR/lib/macOS/libndi_licenses.txt"
 
 # Verify source files exist
 if [ ! -f "$VENDOR_DIR/lib/iOS/libndi_ios.a" ]; then
@@ -29,6 +40,21 @@ fi
 
 if [ ! -f "$VENDOR_DIR/lib/macOS/libndi.dylib" ]; then
     echo -e "${RED}Error: macOS library not found${NC}"
+    exit 1
+fi
+
+if [ ! -f "$NDIKIT_MIT_LICENSE_FILE" ]; then
+    echo -e "${RED}Error: NDIKit MIT license not found at $NDIKIT_MIT_LICENSE_FILE${NC}"
+    exit 1
+fi
+
+if [ ! -f "$THIRD_PARTY_NOTICES_FILE" ]; then
+    echo -e "${RED}Error: THIRD_PARTY_NOTICES.md not found${NC}"
+    exit 1
+fi
+
+if [ ! -f "$NDI_SDK_LICENSES_FILE" ]; then
+    echo -e "${RED}Error: NDI SDK licenses file not found at $NDI_SDK_LICENSES_FILE${NC}"
     exit 1
 fi
 
@@ -119,9 +145,12 @@ create_framework() {
         fi
 
         # Create module.modulemap
+        # Exclude the C++ header — it provides C++ convenience constructors
+        # that are not compatible with Swift/Clang module imports.
         cat > "$VERSION_DIR/Modules/module.modulemap" << 'EOF'
 framework module NDIKitC {
     umbrella header "Processing.NDI.Lib.h"
+    exclude header "Processing.NDI.Lib.cplusplus.h"
     export *
     module * { export * }
 }
@@ -146,7 +175,7 @@ EOF
     <key>CFBundlePackageType</key>
     <string>FMWK</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
+    <string>$VERSION</string>
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>CFBundleSupportedPlatforms</key>
@@ -182,9 +211,12 @@ EOF
         fi
 
         # Create module.modulemap
+        # Exclude the C++ header — it provides C++ convenience constructors
+        # that are not compatible with Swift/Clang module imports.
         cat > "$FRAMEWORK_DIR/Modules/module.modulemap" << 'EOF'
 framework module NDIKitC {
     umbrella header "Processing.NDI.Lib.h"
+    exclude header "Processing.NDI.Lib.cplusplus.h"
     export *
     module * { export * }
 }
@@ -209,7 +241,7 @@ EOF
     <key>CFBundlePackageType</key>
     <string>FMWK</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
+    <string>$VERSION</string>
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>CFBundleSupportedPlatforms</key>
@@ -244,7 +276,18 @@ xcodebuild -create-xcframework \
     -output "$FRAMEWORKS_DIR/$XCFRAMEWORK_NAME"
 
 # ============================================================================
-# Step 4: Verify XCFramework
+# Step 4: Bundle licensing notices
+# ============================================================================
+echo -e "${YELLOW}Bundling licensing notices...${NC}"
+
+cp "$NDIKIT_MIT_LICENSE_FILE" "$FRAMEWORKS_DIR/$XCFRAMEWORK_NAME/NDIKIT_LICENSE.txt"
+cp "$THIRD_PARTY_NOTICES_FILE" "$FRAMEWORKS_DIR/$XCFRAMEWORK_NAME/THIRD_PARTY_NOTICES.md"
+cp "$NDI_SDK_LICENSES_FILE" "$FRAMEWORKS_DIR/$XCFRAMEWORK_NAME/NDI_SDK_LICENSES.txt"
+
+echo -e "${GREEN}✓ Licensing notices bundled in XCFramework${NC}"
+
+# ============================================================================
+# Step 5: Verify XCFramework
 # ============================================================================
 echo -e "${YELLOW}Verifying XCFramework...${NC}"
 
@@ -264,7 +307,29 @@ else
 fi
 
 # ============================================================================
-# Step 5: Clean up
+# Step 6: Create distributable zip + checksum for GitHub Releases
+# ============================================================================
+echo -e "${YELLOW}Creating distributable zip...${NC}"
+
+ZIP_NAME="NDIKitC.xcframework.zip"
+ZIP_PATH="$FRAMEWORKS_DIR/$ZIP_NAME"
+CHECKSUM_FILE="$FRAMEWORKS_DIR/$ZIP_NAME.sha256"
+
+# Remove old zip if present
+rm -f "$ZIP_PATH" "$CHECKSUM_FILE"
+
+# Create zip (ditto preserves symlinks and framework structure correctly)
+ditto -c -k --sequesterRsrc --keepParent "$FRAMEWORKS_DIR/$XCFRAMEWORK_NAME" "$ZIP_PATH"
+
+# Compute SHA-256 checksum (swift package compute-checksum is the canonical tool)
+CHECKSUM=$(swift package compute-checksum "$ZIP_PATH")
+echo "$CHECKSUM" > "$CHECKSUM_FILE"
+
+echo -e "${GREEN}✓ Zip created: $ZIP_PATH${NC}"
+echo -e "${GREEN}✓ SHA-256: $CHECKSUM${NC}"
+
+# ============================================================================
+# Step 7: Clean up
 # ============================================================================
 echo -e "${YELLOW}Cleaning up...${NC}"
 rm -rf "$BUILD_DIR"
@@ -273,8 +338,16 @@ echo ""
 echo -e "${GREEN}Done! XCFramework is ready at:${NC}"
 echo "$FRAMEWORKS_DIR/$XCFRAMEWORK_NAME"
 echo ""
+echo -e "${GREEN}Distributable zip:${NC}"
+echo "  $ZIP_PATH"
+echo "  SHA-256: $CHECKSUM"
+echo ""
 echo -e "${GREEN}Supported platforms:${NC}"
 echo "  • macOS (arm64) - Apple Silicon Macs"
 echo "  • iOS (arm64) - iPhone/iPad devices"
 echo ""
 echo -e "${YELLOW}Note: iOS Simulator is not supported (NDI SDK limitation)${NC}"
+echo ""
+echo -e "${GREEN}Next steps to publish:${NC}"
+echo "  ./Scripts/release.sh <version>"
+echo "  Example: ./Scripts/release.sh 6.0.1"

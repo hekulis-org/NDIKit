@@ -17,9 +17,6 @@
       location = "group:Vendor">
    </FileRef>
    <FileRef
-      location = "group:Frameworks/NDIKitC.xcframework">
-   </FileRef>
-   <FileRef
       location = "group:Examples/NDISenderExample/NDISenderExample.xcodeproj">
    </FileRef>
    <FileRef
