@@ -2,12 +2,14 @@
 //  MetalCameraView.swift
 //  NDISenderExample
 //
-//  Created by Ed on 04.02.26.
-//
 
 import MetalKit
 import SwiftUI
 
+/// A SwiftUI wrapper around `MTKView` that displays the camera preview.
+///
+/// Creates a ``CameraPipeline`` when the view is first attached and wires
+/// it to the ``CameraSenderViewModel``.
 struct MetalCameraView: UIViewRepresentable {
     let viewModel: CameraSenderViewModel
 
@@ -25,33 +27,36 @@ struct MetalCameraView: UIViewRepresentable {
         context.coordinator.update(viewModel: viewModel)
     }
 
+    /// Bridges the SwiftUI lifecycle to the Metal pipeline.
     @MainActor
     final class Coordinator {
         private weak var viewModel: CameraSenderViewModel?
-        private var renderer: CameraSenderRenderer?
+        private var pipeline: CameraPipeline?
         private weak var view: MTKView?
 
         init(viewModel: CameraSenderViewModel) {
             self.viewModel = viewModel
         }
 
+        /// Creates the pipeline and sets it as the view's delegate.
         func attach(to view: MTKView) {
             self.view = view
 
-            if let renderer = CameraSenderRenderer(view: view) {
-                self.renderer = renderer
-                view.delegate = renderer
-                viewModel?.setRenderer(renderer)
+            if let pipeline = CameraPipeline(view: view) {
+                self.pipeline = pipeline
+                view.delegate = pipeline.renderer
+                viewModel?.setPipeline(pipeline)
             } else {
-                viewModel?.setRenderer(nil)
+                viewModel?.setPipeline(nil)
                 viewModel?.setErrorMessage("Failed to initialize Metal renderer.")
             }
         }
 
+        /// Re-wires the pipeline when SwiftUI provides a new view model identity.
         func update(viewModel: CameraSenderViewModel) {
             if self.viewModel !== viewModel {
                 self.viewModel = viewModel
-                viewModel.setRenderer(renderer)
+                viewModel.setPipeline(pipeline)
             }
         }
     }

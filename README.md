@@ -101,7 +101,6 @@ NDI C SDK features not yet exposed in the NDIKit Swift wrapper:
 - include proper license files
 - add tests
 - comment all classes & methods
-- any way around using @unchecked Sendable?
 - sometimes see xcode warning: warning: umbrella header for module 'NDIKitC' does not include header 'Processing.NDI.Lib.cplusplus.h'
 - maybe move some common useful metal conversion code over to the NDIKit pkg.
 

@@ -263,7 +263,7 @@
 				DEVELOPMENT_TEAM = N324PDC8MD;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSBonjourServices = "_ndi._tcp";
+				INFOPLIST_KEY_NSBonjourServices = _ndi._tcp;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Used to capture video for NDI streaming.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "NDI Video Streaming.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -303,7 +303,7 @@
 				DEVELOPMENT_TEAM = N324PDC8MD;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSBonjourServices = "_ndi._tcp";
+				INFOPLIST_KEY_NSBonjourServices = _ndi._tcp;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Used to capture video for NDI streaming.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "NDI Video Streaming.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;

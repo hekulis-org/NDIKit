@@ -1,19 +1,25 @@
 //
-//  CameraSenderRenderer.swift
+//  CameraMetalRenderer.swift
 //  NDISenderExample
-//
-//  Created by Ed on 04.02.26.
 //
 
 import AVFoundation
 import Metal
 import MetalKit
-import NDIKit
-import UIKit
-import os
 
-/// Renders camera frames with Metal and sends them as NDI video frames.
-final class CameraSenderRenderer: NSObject, MTKViewDelegate, AVCaptureVideoDataOutputSampleBufferDelegate {
+/// Renders camera frames using Metal and drives the display/send pipeline.
+///
+/// `CameraMetalRenderer` owns the Metal device, command queue, compute and
+/// render pipelines, frame buffer ring, and the in-flight semaphore. It
+/// implements `MTKViewDelegate` and is driven by the display link.
+///
+/// The renderer does not own camera capture or NDI sending directly. Instead
+/// it communicates with those subsystems through closures:
+/// - ``fetchFrame`` — pulls the latest camera frame.
+/// - ``sendNDIFrame`` — pushes a completed GPU buffer to NDI.
+/// - ``updateRotation`` — notifies capture of orientation changes.
+final class CameraMetalRenderer: NSObject, MTKViewDelegate {
+
     /// Parameters passed to the NV12-to-UYVY compute shader.
     private struct ConversionParams {
         var width: UInt32
@@ -23,22 +29,16 @@ final class CameraSenderRenderer: NSObject, MTKViewDelegate, AVCaptureVideoDataO
 
     /// Backing storage for a single in-flight frame.
     private struct FrameBuffer {
-        let ndiBuffer: MTLBuffer       // UYVY data for NDI (shared storage)
-        let displayTexture: MTLTexture // BGRA texture for on-screen preview
-        let ndiBytesPerRow: Int        // Line stride for UYVY buffer
+        /// Shared UYVY data readable by the CPU for NDI transmission.
+        let ndiBuffer: MTLBuffer
+        /// Private BGRA texture for on-screen preview (GPU-only).
+        let displayTexture: MTLTexture
+        /// Line stride for the UYVY buffer, in bytes.
+        let ndiBytesPerRow: Int
+        /// Frame width in pixels.
         let width: Int
+        /// Frame height in pixels.
         let height: Int
-    }
-
-    /// The most recent camera frame awaiting render/send.
-    private struct PendingFrame {
-        let pixelBuffer: CVPixelBuffer
-        let timestamp: CMTime
-    }
-
-    /// Wraps the capture session for use in detached tasks.
-    nonisolated private struct SessionHandle: @unchecked Sendable {
-        let session: AVCaptureSession?
     }
 
     private let device: MTLDevice
@@ -49,28 +49,43 @@ final class CameraSenderRenderer: NSObject, MTKViewDelegate, AVCaptureVideoDataO
     private let inFlightSemaphore: DispatchSemaphore
     private let maxInFlightFrames = 3
 
-    private let pendingFrameLock = OSAllocatedUnfairLock<PendingFrame?>(initialState: nil)
-    private let senderLock = OSAllocatedUnfairLock<NDISender?>(initialState: nil)
-    private let streamingLock = OSAllocatedUnfairLock<Bool>(initialState: false)
-
     private var textureCache: CVMetalTextureCache?
     private var frameBuffers: [FrameBuffer] = []
     private var frameIndex = 0
     private var lastTexture: MTLTexture?
     private var lastFrameInfo: (width: Int, height: Int, aspect: Double)?
-    private var frameRate: (numerator: Int, denominator: Int) = (30000, 1001)
-    private var lastRotationAngle: Double = 0
 
-    private weak var view: MTKView?
-    // AVFoundation requires a non-nil DispatchQueue for sample buffer callbacks.
-    private let captureQueue = DispatchQueue(label: "com.ndikit.sender.capture")
-    private var session: AVCaptureSession?
-    private weak var videoConnection: AVCaptureConnection?
+    // MARK: - Callbacks
+
+    /// Pulls the latest pending camera frame.
+    ///
+    /// Set by the coordinator to bridge to ``CameraCapture/consumePendingFrame()``.
+    var fetchFrame: (() -> CameraCapture.PendingFrame?)?
+
+    /// Sends a completed UYVY buffer to NDI.
+    ///
+    /// Called from the Metal command buffer completion handler.
+    /// Parameters are: (buffer, width, height, bytesPerRow).
+    var sendNDIFrame: ((MTLBuffer, Int, Int, Int) -> Void)?
+
+    /// Notifies the capture subsystem to update video rotation.
+    ///
+    /// Called at the start of each draw cycle.
+    var updateRotation: ((MTKView) -> Void)?
 
     /// Reports renderer errors.
     var onError: ((String) -> Void)?
 
+    // MARK: - Initialization
+
     /// Creates a renderer bound to the provided Metal view.
+    ///
+    /// Configures the Metal device, command queue, compute pipeline
+    /// (NV12→UYVY conversion), render pipeline (full-screen quad), sampler,
+    /// and texture cache.
+    ///
+    /// - Parameter view: The `MTKView` to render into.
+    /// - Returns: A configured renderer, or `nil` if Metal setup failed.
     init?(view: MTKView) {
         guard let device = MTLCreateSystemDefaultDevice() else {
             return nil
@@ -115,7 +130,6 @@ final class CameraSenderRenderer: NSObject, MTKViewDelegate, AVCaptureVideoDataO
         self.commandQueue = commandQueue
         self.samplerState = samplerState
         self.inFlightSemaphore = DispatchSemaphore(value: maxInFlightFrames)
-        self.view = view
 
         super.init()
 
@@ -134,63 +148,23 @@ final class CameraSenderRenderer: NSObject, MTKViewDelegate, AVCaptureVideoDataO
         textureCache = cache
     }
 
-    /// Starts capture and NDI transmission with the provided configuration.
-    func start(configuration: SenderConfiguration, camera: AVCaptureDevice) {
-        streamingLock.withLock { $0 = true }
-
-        setupSession(configuration: configuration, camera: camera)
-
-        guard let sender = NDISender(configuration: configuration.ndiConfiguration) else {
-            onError?("Failed to create NDI sender.")
-            streamingLock.withLock { $0 = false }
-            return
-        }
-
-        senderLock.withLock { $0 = sender }
-        let handle = SessionHandle(session: session)
-        Task.detached(priority: .userInitiated) {
-            handle.session?.startRunning()
-        }
-    }
-
-    /// Stops capture and tears down the active NDI sender.
-    func stop() {
-        streamingLock.withLock { $0 = false }
-        senderLock.withLock { $0 = nil }
-        let handle = SessionHandle(session: session)
-        Task.detached(priority: .userInitiated) {
-            handle.session?.stopRunning()
-        }
-    }
-
-    // MARK: - AVCaptureVideoDataOutputSampleBufferDelegate
-
-    /// Receives camera frames and stores the latest for rendering.
-    func captureOutput(
-        _ output: AVCaptureOutput,
-        didOutput sampleBuffer: CMSampleBuffer,
-        from connection: AVCaptureConnection
-    ) {
-        guard streamingLock.withLock({ $0 }) else { return }
-        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
-
-        let timestamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-
-        let pending = PendingFrame(pixelBuffer: pixelBuffer, timestamp: timestamp)
-        pendingFrameLock.withLock { current in
-            current = pending
-        }
-
-    }
-
     // MARK: - MTKViewDelegate
 
-    /// Responds to drawable size changes (unused).
+    /// Responds to drawable size changes.
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
 
-    /// Renders the latest camera frame and schedules an NDI send.
+    /// Renders the latest camera frame and schedules an NDI send on completion.
+    ///
+    /// The draw loop follows this sequence:
+    /// 1. Wait on the in-flight semaphore (backpressure).
+    /// 2. Fetch the latest pending frame from ``fetchFrame``.
+    /// 3. Create Metal textures from the NV12 pixel buffer planes.
+    /// 4. Encode a compute pass (NV12→UYVY + BGRA display).
+    /// 5. Encode a render pass (display texture → drawable).
+    /// 6. On GPU completion, send the UYVY buffer via ``sendNDIFrame``
+    ///    and signal the semaphore.
     func draw(in view: MTKView) {
-        updateVideoRotation(for: view)
+        updateRotation?(view)
         inFlightSemaphore.wait()
         var didSchedule = false
         let bufferIndex = frameIndex
@@ -207,11 +181,7 @@ final class CameraSenderRenderer: NSObject, MTKViewDelegate, AVCaptureVideoDataO
             return
         }
 
-        let pendingFrame: PendingFrame? = pendingFrameLock.withLock { frame in
-            let value = frame
-            frame = nil
-            return value
-        }
+        let pendingFrame = fetchFrame?()
 
         if let pendingFrame {
             let pixelBuffer = pendingFrame.pixelBuffer
@@ -252,7 +222,7 @@ final class CameraSenderRenderer: NSObject, MTKViewDelegate, AVCaptureVideoDataO
                     height: max(1, maxThreads / threadExecutionWidth),
                     depth: 1
                 )
-                // Each thread processes a 2-pixel macro-pixel
+                // Each thread processes a 2-pixel macro-pixel.
                 let threadsPerGrid = MTLSize(width: (width + 1) / 2, height: height, depth: 1)
                 computeEncoder.dispatchThreads(threadsPerGrid, threadsPerThreadgroup: threadsPerThreadgroup)
                 computeEncoder.endEncoding()
@@ -268,21 +238,12 @@ final class CameraSenderRenderer: NSObject, MTKViewDelegate, AVCaptureVideoDataO
 
             commandBuffer.addCompletedHandler { [weak self] _ in
                 guard let self else { return }
-
-                if let sender = self.senderLock.withLock({ $0 }) {
-                    let pointer = frameBuffer.ndiBuffer.contents().assumingMemoryBound(to: UInt8.self)
-                    sender.sendVideo(
-                        width: frameBuffer.width,
-                        height: frameBuffer.height,
-                        fourCC: .uyvy,
-                        frameRate: self.frameRate,
-                        aspectRatio: Float(frameBuffer.width) / Float(frameBuffer.height),
-                        formatType: .progressive,
-                        data: pointer,
-                        lineStride: frameBuffer.ndiBytesPerRow
-                    )
-                }
-
+                self.sendNDIFrame?(
+                    frameBuffer.ndiBuffer,
+                    frameBuffer.width,
+                    frameBuffer.height,
+                    frameBuffer.ndiBytesPerRow
+                )
                 self.inFlightSemaphore.signal()
             }
 
@@ -312,92 +273,29 @@ final class CameraSenderRenderer: NSObject, MTKViewDelegate, AVCaptureVideoDataO
         }
     }
 
-    // MARK: - Session Setup
-
-    /// Configures the capture session with the specified camera and settings.
-    private func setupSession(configuration: SenderConfiguration, camera: AVCaptureDevice) {
-        // Tear down existing session if any
-        if let existingSession = session {
-            existingSession.stopRunning()
-            self.session = nil
-        }
-
-        let session = AVCaptureSession()
-        session.beginConfiguration()
-
-        // Set resolution preset
-        let preset = configuration.resolution.sessionPreset
-        if session.canSetSessionPreset(preset) {
-            session.sessionPreset = preset
-        } else if session.canSetSessionPreset(.high) {
-            session.sessionPreset = .high
-        }
-
-        do {
-            let input = try AVCaptureDeviceInput(device: camera)
-            if session.canAddInput(input) {
-                session.addInput(input)
-            }
-
-            // Configure frame rate
-            try camera.lockForConfiguration()
-            let targetDuration = configuration.frameRate.cmTime
-
-            // Find a format that supports our desired frame rate
-            let desiredFPS = Float64(configuration.frameRate.rawValue)
-            for format in camera.formats {
-                let ranges = format.videoSupportedFrameRateRanges
-                for range in ranges where range.minFrameRate <= desiredFPS && range.maxFrameRate >= desiredFPS {
-                    camera.activeFormat = format
-                    break
-                }
-            }
-
-            camera.activeVideoMinFrameDuration = targetDuration
-            camera.activeVideoMaxFrameDuration = targetDuration
-            camera.unlockForConfiguration()
-
-            frameRate = configuration.frameRate.ndiFrameRate
-        } catch {
-            session.commitConfiguration()
-            onError?("Failed to configure camera: \(error.localizedDescription)")
-            return
-        }
-
-        let output = AVCaptureVideoDataOutput()
-        output.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarFullRange]
-        output.alwaysDiscardsLateVideoFrames = true
-        output.setSampleBufferDelegate(self, queue: captureQueue)
-
-        if session.canAddOutput(output) {
-            session.addOutput(output)
-        }
-
-        if let connection = output.connection(with: .video) {
-            videoConnection = connection
-            if let view = view {
-                updateVideoRotation(for: view)
-            }
-        }
-
-        session.commitConfiguration()
-        self.session = session
-    }
-
     // MARK: - Metal Helpers
 
-    /// Ensures a ring of frame buffers exists at the requested size.
-    /// Each buffer contains a shared UYVY buffer for NDI and a private BGRA texture for display.
+    /// Ensures a ring of frame buffers exists at the requested resolution.
+    ///
+    /// Each buffer contains a shared UYVY buffer for NDI and a private BGRA
+    /// texture for display. Buffers are recreated when the resolution changes.
+    ///
+    /// - Parameters:
+    ///   - width: Frame width in pixels.
+    ///   - height: Frame height in pixels.
+    ///   - index: The ring buffer index to return.
+    /// - Returns: The frame buffer at the given index, or `nil` if allocation
+    ///   failed.
     private func ensureFrameBuffer(width: Int, height: Int, index: Int) -> FrameBuffer? {
         if frameBuffers.first?.width != width || frameBuffers.first?.height != height || frameBuffers.count != maxInFlightFrames {
             frameBuffers = (0..<maxInFlightFrames).compactMap { _ in
-                // UYVY: 2 bytes per pixel
+                // UYVY: 2 bytes per pixel.
                 let ndiBytesPerRow = align(value: width * 2, alignment: 64)
                 guard let ndiBuffer = device.makeBuffer(length: ndiBytesPerRow * height, options: .storageModeShared) else {
                     return nil
                 }
 
-                // Display texture: BGRA, GPU-only access
+                // Display texture: BGRA, GPU-only access.
                 let displayDescriptor = MTLTextureDescriptor.texture2DDescriptor(
                     pixelFormat: .bgra8Unorm,
                     width: width,
@@ -420,6 +318,13 @@ final class CameraSenderRenderer: NSObject, MTKViewDelegate, AVCaptureVideoDataO
     }
 
     /// Creates a Metal texture view of a pixel buffer plane.
+    ///
+    /// - Parameters:
+    ///   - pixelBuffer: The source `CVPixelBuffer`.
+    ///   - pixelFormat: The Metal pixel format for the texture view.
+    ///   - planeIndex: The plane index within the pixel buffer.
+    /// - Returns: A Metal texture backed by the pixel buffer plane, or `nil`
+    ///   on failure.
     private func makeTexture(from pixelBuffer: CVPixelBuffer, pixelFormat: MTLPixelFormat, planeIndex: Int) -> MTLTexture? {
         guard let textureCache else { return nil }
         let width = CVPixelBufferGetWidthOfPlane(pixelBuffer, planeIndex)
@@ -442,7 +347,14 @@ final class CameraSenderRenderer: NSObject, MTKViewDelegate, AVCaptureVideoDataO
         return CVMetalTextureGetTexture(cvTexture)
     }
 
-    /// Encodes a textured full-screen render pass.
+    /// Encodes a full-screen textured render pass with aspect-ratio-correct viewport.
+    ///
+    /// - Parameters:
+    ///   - commandBuffer: The command buffer to encode into.
+    ///   - renderPassDescriptor: The render pass descriptor from the view.
+    ///   - outputTexture: The BGRA texture to sample.
+    ///   - drawable: The drawable to present.
+    ///   - frameInfo: The frame dimensions and aspect ratio.
     private func encodeRenderPass(
         commandBuffer: MTLCommandBuffer,
         renderPassDescriptor: MTLRenderPassDescriptor,
@@ -471,7 +383,14 @@ final class CameraSenderRenderer: NSObject, MTKViewDelegate, AVCaptureVideoDataO
         commandBuffer.present(drawable)
     }
 
-    /// Fits the video into the view while preserving aspect ratio.
+    /// Computes a viewport that fits the video frame into the view while
+    /// preserving the aspect ratio (letterbox or pillarbox).
+    ///
+    /// - Parameters:
+    ///   - viewSize: The size of the destination view in pixels.
+    ///   - frameSize: The size of the source video frame in pixels.
+    ///   - aspect: The target aspect ratio.
+    /// - Returns: An `MTLViewport` that centers the content with correct aspect.
     private func fitViewport(viewSize: CGSize, frameSize: CGSize, aspect: Double) -> MTLViewport {
         guard viewSize.width > 0, viewSize.height > 0 else {
             return MTLViewport(originX: 0, originY: 0, width: 0, height: 0, znear: 0, zfar: 1)
@@ -494,37 +413,13 @@ final class CameraSenderRenderer: NSObject, MTKViewDelegate, AVCaptureVideoDataO
     }
 
     /// Aligns a value up to the requested byte alignment.
+    ///
+    /// - Parameters:
+    ///   - value: The value to align.
+    ///   - alignment: The alignment boundary (must be a power of two).
+    /// - Returns: The smallest multiple of `alignment` that is ≥ `value`.
     private func align(value: Int, alignment: Int) -> Int {
         let mask = alignment - 1
         return (value + mask) & ~mask
-    }
-
-    // MARK: - Orientation
-
-    /// Updates the capture connection rotation to match the current interface orientation.
-    private func updateVideoRotation(for view: MTKView) {
-        guard let connection = videoConnection else { return }
-        let orientation = view.window?.windowScene?.effectiveGeometry.interfaceOrientation
-        let angle = rotationAngle(for: orientation)
-        if angle != lastRotationAngle, connection.isVideoRotationAngleSupported(angle) {
-            connection.videoRotationAngle = angle
-            lastRotationAngle = angle
-        }
-    }
-
-    /// Maps interface orientation to a capture rotation angle.
-    private func rotationAngle(for orientation: UIInterfaceOrientation?) -> Double {
-        switch orientation {
-        case .portrait:
-            return 90
-        case .portraitUpsideDown:
-            return 270
-        case .landscapeLeft:
-            return 180
-        case .landscapeRight:
-            return 0
-        default:
-            return lastRotationAngle
-        }
     }
 }

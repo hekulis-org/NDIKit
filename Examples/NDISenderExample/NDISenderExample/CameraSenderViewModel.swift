@@ -22,7 +22,7 @@ final class CameraSenderViewModel {
 
     // MARK: - Private State
 
-    private var renderer: CameraSenderRenderer?
+    private var pipeline: CameraPipeline?
 
     // MARK: - Initialization
 
@@ -86,11 +86,15 @@ final class CameraSenderViewModel {
         availableCameras.first { $0.id == configuration.selectedCameraID }
     }
 
-    // MARK: - Renderer Wiring
+    // MARK: - Pipeline Wiring
 
-    func setRenderer(_ renderer: CameraSenderRenderer?) {
-        self.renderer = renderer
-        renderer?.onError = { [weak self] message in
+    /// Connects the camera pipeline to this view model.
+    ///
+    /// - Parameter pipeline: The pipeline to use, or `nil` if Metal
+    ///   initialization failed.
+    func setPipeline(_ pipeline: CameraPipeline?) {
+        self.pipeline = pipeline
+        pipeline?.onError = { [weak self] message in
             Task { @MainActor in
                 self?.errorMessage = message
                 self?.isStreaming = false
@@ -104,6 +108,7 @@ final class CameraSenderViewModel {
 
     // MARK: - Streaming Control
 
+    /// Requests camera access and starts the capture/render/send pipeline.
     func startStreaming() {
         Task {
             guard await ensureCameraAccess() else {
@@ -112,7 +117,7 @@ final class CameraSenderViewModel {
             }
 
             errorMessage = nil
-            guard let renderer else {
+            guard let pipeline else {
                 errorMessage = "Failed to initialize Metal renderer."
                 return
             }
@@ -122,13 +127,14 @@ final class CameraSenderViewModel {
                 return
             }
 
-            renderer.start(configuration: configuration, camera: camera.device)
+            pipeline.start(configuration: configuration, camera: camera.device)
             isStreaming = true
         }
     }
 
+    /// Stops the capture/render/send pipeline.
     func stopStreaming() {
-        renderer?.stop()
+        pipeline?.stop()
         isStreaming = false
     }
 
