@@ -85,9 +85,36 @@ mkdir -p "$IOS_DEVICE_DIR"
 
 if lipo -info "$IOS_LIB" | grep -q "arm64"; then
     echo "Extracting arm64 for iOS device..."
-    lipo "$IOS_LIB" -thin arm64 -output "$IOS_DEVICE_DIR/libndi.a"
+    lipo "$IOS_LIB" -thin arm64 -output "$IOS_DEVICE_DIR/libndi_thin.a"
 else
     echo -e "${RED}Error: No arm64 slice in iOS library${NC}"
+    exit 1
+fi
+
+# Repack iOS static archive into a single member object.
+# The upstream archive can contain duplicate member names with deterministic
+# timestamps, which causes dsymutil warnings in downstream apps.
+echo "Repacking iOS static archive to avoid duplicate archive members..."
+xcrun --sdk iphoneos clang \
+    -arch arm64 \
+    -miphoneos-version-min=17.5 \
+    -r \
+    -nostdlib \
+    -Wl,-all_load,-keep_private_externs \
+    "$IOS_DEVICE_DIR/libndi_thin.a" \
+    -o "$IOS_DEVICE_DIR/libndi_combined.o"
+
+# Remove debug map references to original archive members.
+# Without this, downstream dsymutil can emit hundreds of warnings for
+# duplicate/missing member paths like libndi_thin.a(foo.o).
+xcrun strip -S "$IOS_DEVICE_DIR/libndi_combined.o"
+
+libtool -static -o "$IOS_DEVICE_DIR/libndi.a" "$IOS_DEVICE_DIR/libndi_combined.o"
+
+# Ensure repacked archive no longer has duplicate member names.
+IOS_DUPLICATE_MEMBERS=$(ar -t "$IOS_DEVICE_DIR/libndi.a" | sort | uniq -d | wc -l | xargs)
+if [ "$IOS_DUPLICATE_MEMBERS" != "0" ]; then
+    echo -e "${RED}Error: Repacked iOS archive still has duplicate members ($IOS_DUPLICATE_MEMBERS)${NC}"
     exit 1
 fi
 
