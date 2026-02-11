@@ -30,7 +30,7 @@ let package = Package(
         .target(
             name: "NDIKit",
             dependencies: ["NDIKitC"],
-            path: "Sources/NDIKit",
+            path: "NDIKit/Sources/NDIKit",
             swiftSettings: [
                 .enableUpcomingFeature("StrictConcurrency"),
             ],
@@ -49,7 +49,7 @@ let package = Package(
         .target(
             name: "NDIKitMetal",
             dependencies: ["NDIKit"],
-            path: "Sources/NDIKitMetal",
+            path: "NDIKit/Sources/NDIKitMetal",
             resources: [.process("Resources")],
             swiftSettings: [
                 .enableUpcomingFeature("StrictConcurrency"),
@@ -74,6 +74,7 @@ let package = Package(
         .testTarget(
             name: "NDIKitTests",
             dependencies: ["NDIKit"],
+            path: "NDIKit/Tests/NDIKitTests",
             swiftSettings: [
                 .enableUpcomingFeature("StrictConcurrency"),
             ]

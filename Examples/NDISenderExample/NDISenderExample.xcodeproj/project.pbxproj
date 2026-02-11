@@ -103,7 +103,7 @@
 			mainGroup = 6467742E2F33882A00890793;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				646774A22F34C0A000890794 /* XCLocalSwiftPackageReference "../../NDIKit" */,
+				646774A22F34C0A000890794 /* XCLocalSwiftPackageReference "../.." */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 646774382F33882A00890793 /* Products */;
@@ -359,9 +359,9 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		646774A22F34C0A000890794 /* XCLocalSwiftPackageReference "../../NDIKit" */ = {
+		646774A22F34C0A000890794 /* XCLocalSwiftPackageReference "../.." */ = {
 			isa = XCLocalSwiftPackageReference;
-			relativePath = ../../NDIKit;
+			relativePath = ../..;
 		};
 /* End XCLocalSwiftPackageReference section */
 
