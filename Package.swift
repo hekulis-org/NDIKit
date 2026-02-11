@@ -64,6 +64,8 @@ let package = Package(
         // Binary URL must use the GitHub API asset format (not browser download URL).
         // Xcode's SPM resolver cannot follow the 302 redirect from browser URLs.
         // The asset ID is set automatically by Scripts/release.sh after upload.
+        // IMPORTANT: Update URL + checksum by running Scripts/release.sh
+        // after rebuilding the XCFramework with Scripts/build-xcframework.sh.
         .binaryTarget(
             name: "NDIKitC",
             url: "https://api.github.com/repos/hekulis-org/NDIKit/releases/assets/354324729.zip",
