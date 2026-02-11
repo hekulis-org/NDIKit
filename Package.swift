@@ -66,8 +66,8 @@ let package = Package(
         // The asset ID is set automatically by Scripts/release.sh after upload.
         .binaryTarget(
             name: "NDIKitC",
-            url: "https://api.github.com/repos/hekulis-org/NDIKit/releases/assets/354322603.zip",
-            checksum: "33c1b45a08c1b209187f25612cb2826f6d0c2b013970f21508925d0c4d0a7196"
+            url: "https://api.github.com/repos/hekulis-org/NDIKit/releases/assets/354324729.zip",
+            checksum: "5079ecfabc3dd68104e953f084688b647b0234072286be211e536a72bb19dc38"
         ),
 
 
