@@ -60,11 +60,6 @@ final class CameraPipeline {
         renderer.sendNDIFrame = { [weak sender] buffer, width, height, bytesPerRow in
             sender?.sendFrame(buffer: buffer, width: width, height: height, bytesPerRow: bytesPerRow)
         }
-
-        // Wire the renderer to update capture orientation.
-        renderer.updateRotation = { [weak capture] view in
-            capture?.updateVideoRotation(for: view)
-        }
     }
 
     /// Starts capture and NDI transmission with the provided configuration.

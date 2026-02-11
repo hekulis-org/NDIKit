@@ -6,12 +6,18 @@
 import AVFoundation
 import MetalKit
 import os
+import UIKit
 
 /// Manages AVFoundation camera capture and delivers the latest frame to consumers.
 ///
 /// `CameraCapture` owns the `AVCaptureSession`, handles the sample buffer
 /// delegate callback, and stores the most recent camera frame for the render
 /// loop to consume via ``consumePendingFrame()``.
+///
+/// Orientation is handled by observing `UIDevice.orientationDidChangeNotification`
+/// and setting `videoRotationAngle` on the capture connection so that
+/// AVFoundation delivers pre-rotated pixel buffers. The front camera
+/// additionally enables `isVideoMirrored` for the expected selfie-mirror effect.
 ///
 /// - Note: AVFoundation requires a non-nil `DispatchQueue` for
 ///   `AVCaptureVideoDataOutput.setSampleBufferDelegate(_:queue:)`.
@@ -39,16 +45,24 @@ final class CameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
 
     private var session: AVCaptureSession?
     private weak var videoConnection: AVCaptureConnection?
-    private var lastRotationAngle: Double = 0
+    private var orientationObserver: NSObjectProtocol?
 
     /// Reports capture errors.
     var onError: ((String) -> Void)?
+
+    deinit {
+        if let observer = orientationObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
 
     // MARK: - Session Lifecycle
 
     /// Configures a new capture session with the specified camera and settings.
     ///
-    /// Tears down any existing session before creating a new one.
+    /// Tears down any existing session before creating a new one. Sets the
+    /// initial rotation angle to match the current device orientation and
+    /// begins observing orientation changes.
     ///
     /// - Parameters:
     ///   - configuration: The sender configuration containing resolution and
@@ -121,6 +135,24 @@ final class CameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
 
         if let connection = output.connection(with: .video) {
             videoConnection = connection
+
+            // Front camera: mirror horizontally for the expected selfie view.
+            // Without this, rotation + the front sensor's native flip combine
+            // to produce an upside-down image.
+            if connection.isVideoMirroringSupported {
+                connection.automaticallyAdjustsVideoMirroring = false
+                connection.isVideoMirrored = (camera.position == .front)
+            }
+
+            // Set the initial rotation angle immediately so the very first
+            // frames are correctly oriented. Do not wait for the render loop.
+            let angle = rotationAngle(for: UIDevice.current.orientation)
+            if connection.isVideoRotationAngleSupported(angle) {
+                connection.videoRotationAngle = angle
+            }
+
+            // Observe device orientation changes to keep the rotation in sync.
+            startObservingOrientation()
         }
 
         session.commitConfiguration()
@@ -133,6 +165,9 @@ final class CameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     /// Uses `Task.detached` to avoid blocking the main thread, as recommended
     /// for `AVCaptureSession.startRunning()`.
     func startSession() {
+        // Ensure we receive orientation change notifications.
+        UIDevice.current.beginGeneratingDeviceOrientationNotifications()
+
         let handle = SessionHandle(session: session)
         Task.detached(priority: .userInitiated) {
             handle.session?.startRunning()
@@ -148,6 +183,7 @@ final class CameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         Task.detached(priority: .userInitiated) {
             handle.session?.stopRunning()
         }
+        UIDevice.current.endGeneratingDeviceOrientationNotifications()
     }
 
     // MARK: - Streaming State
@@ -198,36 +234,69 @@ final class CameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
 
     // MARK: - Orientation
 
-    /// Updates the capture connection rotation to match the current interface orientation.
+    /// Begins observing device orientation change notifications.
     ///
-    /// - Parameter view: The `MTKView` whose window scene provides the current
-    ///   interface orientation.
-    func updateVideoRotation(for view: MTKView) {
-        guard let connection = videoConnection else { return }
-        let orientation = view.window?.windowScene?.effectiveGeometry.interfaceOrientation
-        let angle = rotationAngle(for: orientation)
-        if angle != lastRotationAngle, connection.isVideoRotationAngleSupported(angle) {
-            connection.videoRotationAngle = angle
-            lastRotationAngle = angle
+    /// When the device rotates, the capture connection's `videoRotationAngle`
+    /// is updated to match, so AVFoundation delivers pre-rotated buffers.
+    private func startObservingOrientation() {
+        // Remove any previous observer.
+        if let observer = orientationObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+
+        orientationObserver = NotificationCenter.default.addObserver(
+            forName: UIDevice.orientationDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.applyCurrentDeviceOrientation()
         }
     }
 
-    /// Maps an interface orientation to a capture rotation angle in degrees.
+    /// Reads the current device orientation and updates the capture connection.
+    private func applyCurrentDeviceOrientation() {
+        guard let connection = videoConnection else { return }
+
+        let deviceOrientation = UIDevice.current.orientation
+        let angle = rotationAngle(for: deviceOrientation)
+        if connection.isVideoRotationAngleSupported(angle) {
+            connection.videoRotationAngle = angle
+        }
+    }
+
+    /// Maps a device orientation to the capture connection rotation angle.
     ///
-    /// - Parameter orientation: The current interface orientation, or `nil`.
-    /// - Returns: The rotation angle to apply to the capture connection.
-    private func rotationAngle(for orientation: UIInterfaceOrientation?) -> Double {
+    /// The angle tells AVFoundation how many degrees clockwise to rotate
+    /// the sensor output so it appears upright for the given orientation.
+    /// These values are the same for both front and back cameras —
+    /// front-camera mirroring is handled separately via `isVideoMirrored`.
+    ///
+    /// - Parameter orientation: The current device orientation.
+    /// - Returns: The rotation angle in degrees, or `nil` for non-video
+    ///   orientations (face up, face down, unknown).
+    private func rotationAngle(for orientation: UIDeviceOrientation) -> Double {
         switch orientation {
         case .portrait:
             return 90
         case .portraitUpsideDown:
             return 270
         case .landscapeLeft:
-            return 180
-        case .landscapeRight:
+            // Device rotated left → home button on right → content rotated clockwise.
             return 0
-        default:
-            return lastRotationAngle
+        case .landscapeRight:
+            // Device rotated right → home button on left → content rotated counter-clockwise.
+            return 180
+        case .unknown, .faceUp, .faceDown:
+            // Non-spatial orientations: keep the current connection angle.
+            if let angle = videoConnection?.videoRotationAngle {
+                return Double(angle)
+            }
+            return 90
+        @unknown default:
+            if let angle = videoConnection?.videoRotationAngle {
+                return Double(angle)
+            }
+            return 90
         }
     }
 }

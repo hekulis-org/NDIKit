@@ -17,7 +17,6 @@ import MetalKit
 /// it communicates with those subsystems through closures:
 /// - ``fetchFrame`` — pulls the latest camera frame.
 /// - ``sendNDIFrame`` — pushes a completed GPU buffer to NDI.
-/// - ``updateRotation`` — notifies capture of orientation changes.
 final class CameraMetalRenderer: NSObject, MTKViewDelegate {
 
     /// Parameters passed to the NV12-to-UYVY compute shader.
@@ -67,11 +66,6 @@ final class CameraMetalRenderer: NSObject, MTKViewDelegate {
     /// Called from the Metal command buffer completion handler.
     /// Parameters are: (buffer, width, height, bytesPerRow).
     var sendNDIFrame: ((MTLBuffer, Int, Int, Int) -> Void)?
-
-    /// Notifies the capture subsystem to update video rotation.
-    ///
-    /// Called at the start of each draw cycle.
-    var updateRotation: ((MTKView) -> Void)?
 
     /// Reports renderer errors.
     var onError: ((String) -> Void)?
@@ -164,7 +158,6 @@ final class CameraMetalRenderer: NSObject, MTKViewDelegate {
     /// 6. On GPU completion, send the UYVY buffer via ``sendNDIFrame``
     ///    and signal the semaphore.
     func draw(in view: MTKView) {
-        updateRotation?(view)
         inFlightSemaphore.wait()
         var didSchedule = false
         let bufferIndex = frameIndex
