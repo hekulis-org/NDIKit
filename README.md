@@ -6,8 +6,12 @@ It uses Swift 6 with strict concurrency. It is packaged for use with Swift Packa
 
 The goal is that you can just import this package and get going without having to fiddle with low level C/C++ build configurations or have to use C++ code/API Objects inside of your Swift code.
 
-Supported platforms: iOS, macOS.
-NOTE: iOS Simulators are NOT supported because NDI does not provide SDK binaries for the simulator architecture. See [iOS Simulator Development](#ios-simulator-development) for a recommended workaround.
+Supported platforms: iOS, macOS.  
+
+NOTE: iOS Simulators are NOT supported.
+The NDI SDK does not ship simulator binaries, so SPM cannot resolve the NDIKitC binary target when building for iOS Simulator. This means any target that depends on NDIKit will fail to build for the simulator.  
+For more details and workarounds see [Developing with Simulators](Docs/developing-with-simulators.md).
+
 
 ## Usage
 
@@ -17,36 +21,7 @@ NOTE: iOS Simulators are NOT supported because NDI does not provide SDK binaries
 
 ### iOS Simulator Development
 
-The NDI SDK does not ship simulator binaries, so SPM cannot resolve the NDIKitC binary target when building for iOS Simulator. This means any target that depends on NDIKit will fail to build for the simulator.
 
-The recommended workaround is to create a **separate Xcode target** in your app project that excludes the NDIKit dependency, and use that target for simulator-based development:
-
-1. **Duplicate your app target.** In Xcode, right-click your app target → *Duplicate*. Rename it to something like `MyApp (Simulator)`.
-
-2. **Remove NDIKit from the simulator target.** Select the new target → *General* → *Frameworks, Libraries, and Embedded Content* → remove NDIKit.
-
-3. **Add a compiler flag.** In the simulator target's build settings, add `-DSIMULATOR_BUILD` to *Other Swift Flags* (`OTHER_SWIFT_FLAGS`). This lets you conditionally compile out NDI-dependent code.
-
-4. **Guard NDI code with conditional compilation.** Wrap any code that imports or uses NDIKit:
-
-   ```swift
-   #if !SIMULATOR_BUILD
-   import NDIKit
-
-   func startNDI() {
-       NDI.initialize()
-       // ...
-   }
-   #else
-   func startNDI() {
-       print("NDI not available in simulator builds")
-   }
-   #endif
-   ```
-
-5. **Use the simulator target for day-to-day development.** Switch to the real target when building for a physical device or for distribution.
-
-This keeps NDIKit's source code clean and puts the simulator workaround where it belongs — in your app project.
 
 ### Required Entitlements
 
